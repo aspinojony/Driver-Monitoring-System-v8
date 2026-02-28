@@ -25,7 +25,7 @@ class BehaviorDetector:
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                 "data",
                 "weights",
-                "yolov8n_driver_cls",
+                "yolov8n_driver_cls2",
                 "weights",
                 "best.pt",
             )
