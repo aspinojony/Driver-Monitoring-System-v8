@@ -22,9 +22,9 @@ class BehaviorDetector:
         if model_path is None:
             model_path = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "data",
-                "weights",
-                "yolov8n_driver_cls2",
+                "runs",
+                "classify",
+                "domain_adapted_cls_final",
                 "weights",
                 "best.pt",
             )
