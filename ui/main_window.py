@@ -79,7 +79,16 @@ class VideoThread(QThread):
 
         self.log_signal.emit(f"Opened video source: {self.source}")
 
+        # 获取视频原生帧率以控制播放速度 (如果是一段视频文件)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps <= 0 or fps > 100:
+            fps = 30  # 默认30帧
+        frame_delay = 1.0 / fps
+
+        is_video_file = isinstance(self.source, str) and not self.source.isdigit()
+
         while self._run_flag:
+            start_time = time.time()
             ret, frame = cap.read()
             if not ret:
                 self.log_signal.emit("End of video stream.")
@@ -92,6 +101,12 @@ class VideoThread(QThread):
                 except queue.Empty:
                     pass
             self.frame_queue.put(frame)
+
+            # 对于视频文件，硬性限制读取速度，防止视频1秒钟像快进一样闪播完
+            if is_video_file:
+                elapsed = time.time() - start_time
+                if elapsed < frame_delay:
+                    time.sleep(frame_delay - elapsed)
 
         cap.release()
         # 通知推理循环结束
@@ -130,15 +145,8 @@ class VideoThread(QThread):
                         limg = cv2.merge((cl, a, b))
                         cv_img = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
 
-                # 1. Behavior Detection (YOLO) - Throttled to ONCE EVERY 3 SECONDS
-                current_time = time.time()
-                if current_time - self.last_yolo_time >= 3.0:
-                    self.last_yolo_time = current_time
-                    cv_img, behavior = self.behavior_detector.process_frame(cv_img)
-                    self.last_yolo_behavior = behavior
-                else:
-                    # 冷却期间只用历史判定结果，以极大削减系统卡顿，实现“每3秒鉴别一次违规行为”
-                    behavior = self.last_yolo_behavior
+                # 1. Behavior Detection (YOLO) - Process every frame so the EMA filter can accumulate cleanly
+                cv_img, behavior = self.behavior_detector.process_frame(cv_img)
 
                 # Make sure the array is completely mutable and contiguous in memory
                 # This explicitly solves the OpenCV (-5:Bad argument) readonly errors natively on macOS Metal
