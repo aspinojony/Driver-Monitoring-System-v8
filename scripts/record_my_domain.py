@@ -12,9 +12,16 @@ BASE_DIR = os.path.join(
 
 # 确保文件夹存在 (由于 StateFarm 数据集已被脚本处理过，正常情况下这些文件夹是有的)
 classes_map = {
-    "n": ("Normal_Driving", "正常驾驶 (双手放好)"),
-    "p": ("Talking_on_Phone_Right", "右手接打电话 (假装拿手机)"),
-    "d": ("Drinking", "喝水 (拿起水杯靠近嘴部)"),
+    "0": ("Normal_Driving", "正常驾驶 (双手放好或手扶鼠标键盘)"),
+    "1": ("Texting_Right", "右手发短信 (右手握手机在胸前打字)"),
+    "2": ("Talking_on_Phone_Right", "右手打电话 (右手拿手机贴在耳边)"),
+    "3": ("Texting_Left", "左手发短信 (左手握手机在胸前打字)"),
+    "4": ("Talking_on_Phone_Left", "左手打电话 (左手拿手机贴在耳边)"),
+    "5": ("Operating_Radio", "操作中控台 (单手伸出假装按屏幕或操作鼠标)"),
+    "6": ("Drinking", "喝水 (手里拿水杯贴紧嘴唇)"),
+    "7": ("Reaching_Behind", "向后转身 (身体拧转看向后方)"),
+    "8": ("Hair_and_Makeup", "整理头发/化妆 (手摸头发或整理面部)"),
+    "9": ("Talking_to_Passenger", "与乘客聊天 (头向右侧转动说话)"),
 }
 
 for k, (folder, desc) in classes_map.items():
@@ -102,7 +109,7 @@ def main():
         frame = cv2.flip(frame, 1)
         cv2.putText(
             frame,
-            "Press N(Normal) P(Phone) D(Drinking) | Q to Quit",
+            "Press 0-9 to shoot 10 classes | Q to Quit",
             (10, 30),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
