@@ -3,7 +3,7 @@ from ultralytics import YOLO
 
 
 class BehaviorDetector:
-    def __init__(self, model_path=None, confidence_threshold=0.45, smoothing_window=15):
+    def __init__(self, model_path=None, confidence_threshold=0.30, smoothing_window=15):
         """
         Load YOLOv8 model for behavior detection.
         In a real scenario, this would load weights trained to detect Normal,
@@ -16,7 +16,9 @@ class BehaviorDetector:
         # EMA (Exponential Moving Average) & 滞回滤波参数
         self.ema_danger_score = 0.0
         self.alpha = 0.3  # EMA学习率
-        self.instant_trigger_threshold = 0.85  # 确凿证据阈值 (0延迟)
+        self.instant_trigger_threshold = (
+            0.70  # 确凿证据阈值 (0延迟)，针对桌面测试大幅下调
+        )
         if model_path is None:
             # Point to the newly trained YOLO classification model by default
             model_path = os.path.join(
