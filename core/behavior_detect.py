@@ -20,12 +20,11 @@ class BehaviorDetector:
             0.70  # 确凿证据阈值 (0延迟)，针对桌面测试大幅下调
         )
         if model_path is None:
-            # Point to the newly trained YOLO classification model by default
             model_path = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "data",
-                "weights",
-                "yolov8n_driver_cls2",
+                "runs",
+                "classify",
+                "domain_adapted_cls_final",
                 "weights",
                 "best.pt",
             )
