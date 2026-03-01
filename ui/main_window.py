@@ -128,6 +128,10 @@ class VideoThread(QThread):
                 if cv_img is None:
                     break
 
+                # 对摄像头图像进行镜像反转，满足 Mac 用户习惯并与之前的录制数据几何对齐
+                if str(self.source).isdigit() or self.source == 0:
+                    cv_img = cv2.flip(cv_img, 1)
+
                 # 0. Image Enhancement (Smart Auto-Night-Vision)
                 if self.use_clahe:
                     # 计算画面平均亮度 (0 是纯黑，255 是纯白)
