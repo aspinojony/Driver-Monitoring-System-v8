@@ -225,19 +225,19 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(
             """
             QMainWindow {
-                background-color: #1e1e2e;
+                background-color: #1a1a1a;
             }
             QLabel {
-                color: #cdd6f4;
-                font-family: '.AppleSystemUIFont', 'SF Pro', 'Helvetica Neue', Arial, sans-serif;
+                color: #e0e0e0;
+                font-family: 'Segoe UI', 'SF Pro', 'Helvetica Neue', Arial, sans-serif;
             }
             QGroupBox {
-                border: 2px solid #45475a;
-                border-radius: 8px;
-                margin-top: 2ex;
-                background-color: #181825;
-                color: #89dceb;
-                font-size: 14px;
+                border: 1px solid #444444;
+                border-radius: 2px;
+                margin-top: 1.5ex;
+                background-color: #242424;
+                color: #ffffff;
+                font-size: 13px;
                 font-weight: bold;
             }
             QGroupBox::title {
@@ -246,31 +246,32 @@ class MainWindow(QMainWindow):
                 padding: 0 5px;
             }
             QPushButton {
-                background-color: #89b4fa;
-                color: #11111b;
-                border-radius: 6px;
-                padding: 10px;
+                background-color: #0078d7;
+                color: #ffffff;
+                border-radius: 2px;
+                padding: 8px;
                 font-weight: bold;
-                font-size: 14px;
+                font-size: 13px;
+                border: 1px solid #005a9e;
             }
             QPushButton:hover {
-                background-color: #b4befe;
+                background-color: #106ebe;
             }
             QPushButton:pressed {
-                background-color: #74c7ec;
+                background-color: #005a9e;
             }
             QComboBox {
-                background-color: #313244;
-                color: #cdd6f4;
-                border: 1px solid #45475a;
-                border-radius: 4px;
-                padding: 5px;
+                background-color: #333333;
+                color: #ffffff;
+                border: 1px solid #555555;
+                border-radius: 2px;
+                padding: 4px;
             }
             QTextEdit {
-                background-color: #11111b;
-                color: #a6e3a1;
-                border: 1px solid #45475a;
-                border-radius: 6px;
+                background-color: #000000;
+                color: #00ff00;
+                border: 1px solid #444444;
+                border-radius: 2px;
                 padding: 5px;
                 font-family: Consolas, monospace;
             }
@@ -287,7 +288,9 @@ class MainWindow(QMainWindow):
         video_layout = QVBoxLayout()
         self.image_label = QLabel(self)
         self.image_label.setMinimumSize(640, 480)
-        self.image_label.setStyleSheet("background-color: #11111b; border-radius: 8px;")
+        self.image_label.setStyleSheet(
+            "background-color: #0d0d0d; border: 1px solid #333333; border-radius: 2px;"
+        )
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setText("正在等待视频输入...")
         self.image_label.setFont(QFont("Arial", 16))
@@ -320,7 +323,9 @@ class MainWindow(QMainWindow):
         self.btn_start = QPushButton("开始检测 ▶")
         self.btn_start.clicked.connect(self.start_detection)
         self.btn_stop = QPushButton("停止检测 ⏹")
-        self.btn_stop.setStyleSheet("background-color: #f38ba8; color: white;")
+        self.btn_stop.setStyleSheet(
+            "background-color: #d13438; border: 1px solid #a80000; color: white;"
+        )
         self.btn_stop.clicked.connect(self.stop_detection)
         btn_layout.addWidget(self.btn_start)
         btn_layout.addWidget(self.btn_stop)
@@ -372,11 +377,12 @@ class MainWindow(QMainWindow):
 
         # Style template for premium cards
         card_style_normal = """
-            background-color: #1e1e2e;
-            border-radius: 8px;
-            border: 2px solid #313244;
+            background-color: #2b2b2b;
+            border-radius: 2px;
+            border: 1px solid #444444;
             padding: 10px;
-            font-size: 14px;
+            font-size: 13px;
+            color: #d0d0d0;
         """
 
         self.lbl_ear = QLabel("结构特征 EAR<br><br>--")
@@ -406,11 +412,11 @@ class MainWindow(QMainWindow):
         self.log_window.setReadOnly(True)
         self.log_window.append("-> 系统初始化完成.")
 
-        self.btn_export = QPushButton("📊 导出本次全息驾车报告 (Export PDF/Markdown)")
+        self.btn_export = QPushButton("📊 导出本次全息驾车报告 (EXCEL/PDF记录器)")
         self.btn_export.clicked.connect(self.export_session_report)
         self.btn_export.setStyleSheet(
-            "background-color: #a6e3a1; color: #11111b;"
-        )  # Green highlight
+            "background-color: #107c10; border: 1px solid #0b5a0b; color: white;"
+        )  # Industrial Green highlight
 
         log_layout.addWidget(self.log_window)
         log_layout.addWidget(self.btn_export)
@@ -478,7 +484,7 @@ class MainWindow(QMainWindow):
             self.image_label.clear()
             self.image_label.setText("监控已停止。")
             self.image_label.setStyleSheet(
-                "background-color: #11111b; border-radius: 8px;"
+                "background-color: #0d0d0d; border: 1px solid #333333; border-radius: 2px;"
             )
 
     def update_image(self, cv_img):
@@ -525,42 +531,47 @@ class MainWindow(QMainWindow):
             f"结构特征 MAR<br><br><span style='font-size: 26px; color: #ffffff;'>{mar:.2f}</span>"
         )
 
-        # Color palettes for dynamic states
-        COLOR_SAFE = "#a6e3a1"  # Green
-        COLOR_WARN = "#f9e2af"  # Yellow
-        COLOR_CRIT = "#f38ba8"  # Red
+        # Color palettes for dynamic states (Industrial)
+        COLOR_SAFE = "#107c10"  # Microsoft/Industrial Green
+        COLOR_WARN = "#ffb900"  # Amber/Yellow
+        COLOR_CRIT = "#d13438"  # Danger Red
 
         # Determine Fatigue Style
         if "正常" in fatigue:
             f_color = COLOR_SAFE
-            b_color = "#313244"
+            b_color = "#444444"
+            bg_color = "#2b2b2b"
         elif "极度" in fatigue:
-            f_color = COLOR_CRIT
-            b_color = "#f38ba8"
+            f_color = "#ffffff"
+            b_color = COLOR_CRIT
+            bg_color = COLOR_CRIT
         else:
             f_color = COLOR_WARN
-            b_color = "#f9e2af"
+            b_color = COLOR_WARN
+            bg_color = "#2b2b2b"
 
         self.lbl_fatigue.setText(
             f"视觉疲劳指数<br><br><span style='font-size: 24px; color: {f_color}; font-weight: 900;'>{fatigue}</span>"
         )
         self.lbl_fatigue.setStyleSheet(
-            f"background-color: #1e1e2e; border-radius: 8px; border: 2px solid {b_color}; padding: 10px; font-size: 14px;"
+            f"background-color: {bg_color}; border-radius: 2px; border: 1px solid {b_color}; padding: 10px; font-size: 13px;"
         )
 
         # Determine Behavior Style
         if "正常" in behavior:
             b_text_col = COLOR_SAFE
-            b_border_col = "#313244"
+            b_border_col = "#444444"
+            b_bg_col = "#2b2b2b"
         else:
-            b_text_col = COLOR_CRIT
-            b_border_col = "#f38ba8"
+            b_text_col = "#ffffff"
+            b_border_col = COLOR_CRIT
+            b_bg_col = COLOR_CRIT
 
         self.lbl_behavior.setText(
             f"驾驶行为预测<br><br><span style='font-size: 24px; color: {b_text_col}; font-weight: 900;'>{behavior}</span>"
         )
         self.lbl_behavior.setStyleSheet(
-            f"background-color: #1e1e2e; border-radius: 8px; border: 2px solid {b_border_col}; padding: 10px; font-size: 14px;"
+            f"background-color: {b_bg_col}; border-radius: 2px; border: 1px solid {b_border_col}; padding: 10px; font-size: 13px;"
         )
 
     def convert_cv_qt(self, cv_img):
