@@ -405,7 +405,15 @@ class MainWindow(QMainWindow):
         self.log_window = QTextEdit()
         self.log_window.setReadOnly(True)
         self.log_window.append("-> 系统初始化完成.")
+
+        self.btn_export = QPushButton("📊 导出本次全息驾车报告 (Export PDF/Markdown)")
+        self.btn_export.clicked.connect(self.export_session_report)
+        self.btn_export.setStyleSheet(
+            "background-color: #a6e3a1; color: #11111b;"
+        )  # Green highlight
+
         log_layout.addWidget(self.log_window)
+        log_layout.addWidget(self.btn_export)
         log_group.setLayout(log_layout)
 
         right_panel.addWidget(log_group, stretch=1)
@@ -437,6 +445,25 @@ class MainWindow(QMainWindow):
         self.thread.update_stats_signal.connect(self.update_stats)
         self.thread.log_signal.connect(self.append_log)
         self.thread.start()
+
+    def export_session_report(self):
+        """调用全局 AI 引擎中的记录仪，一键生成报表到桌面"""
+        if not hasattr(self, "global_engine"):
+            return
+
+        import os, time, subprocess
+
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        file_name = f"驾驶员会话监控报告_{int(time.time())}.txt"
+        save_path = os.path.join(desktop, file_name)
+
+        # 引擎内嵌的记录仪提供计算与组装逻辑
+        self.global_engine.logger.export_report(save_path)
+
+        self.append_log(f"✅ 完美！系统已出具临床级体检报告！\n📁 存放于: {save_path}")
+
+        # 专为 MacOS 打造的物理召唤神迹：写完直接弹窗打开
+        subprocess.Popen(["open", save_path])
 
     def toggle_clahe(self, checked):
         if self.thread:

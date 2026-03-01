@@ -4,6 +4,7 @@ import time
 
 from core.behavior_detect import BehaviorDetector
 from core.fatigue_detect import FatigueDetector
+from core.session_logger import SessionLogger
 from core.config import SMART_NIGHT_VISION_THRESHOLD
 
 
@@ -18,6 +19,7 @@ class MonitoringEngine:
         # 初始化各大核心组件
         self.behavior_detector = BehaviorDetector()
         self.fatigue_detector = FatigueDetector()
+        self.logger = SessionLogger()
 
         # 预加载 CLAHE 夜视增强器（针对运算密集型，做一次化实例化）
         self.clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
@@ -28,6 +30,7 @@ class MonitoringEngine:
             self.fatigue_detector.reset_tracker()
         if hasattr(self.behavior_detector, "reset_tracker"):
             self.behavior_detector.reset_tracker()
+        self.logger.reset()
 
     def process_frame(self, frame, use_clahe=False):
         """
@@ -77,11 +80,14 @@ class MonitoringEngine:
         }
 
         # -------------------------------------------------------------------
-        # 4. 图形渲染挂载点 (引擎统一渲染高危警报红框)
+        # 4. 图形渲染挂载点与统计记录器
         # -------------------------------------------------------------------
         if results["is_warning"]:
             h, w = frame.shape[:2]
             border_thickness = 35 if results["is_critical"] else 15
             cv2.rectangle(frame, (0, 0), (w, h), (0, 0, 255), border_thickness)
+
+            # 将违规数据直接入库留存！(用于出具行车报表)
+            self.logger.log_event(behavior, fatigue_level, results["is_critical"])
 
         return frame, results

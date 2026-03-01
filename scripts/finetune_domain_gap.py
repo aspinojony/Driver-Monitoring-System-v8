@@ -19,13 +19,15 @@ def main():
         print(f"❌ 找不到满级权重，请检查路径: {best_weights_path}")
         return
 
-    print(f"✅ 满级权重装载完毕！准备将您刚拍的 200 张照片强行印入模型脑内...")
+    print(
+        f"✅ 满级权重装载完毕！准备将您刚拍的 500 张桌面专属照片强行印入模型脑内（采用纯净版提纯路径）..."
+    )
 
     # 加载已有的牛逼预训练权重
     model = YOLO(best_weights_path)
 
-    # 制定极短微调计划 (只需 10 轮即可完成领域自制)
-    epochs_to_run = 10
+    # 制定纯正的 few-shot 微调计划 (只需 20 轮即可完成领域彻底自制，因为排除了万张汽车长尾图干扰)
+    epochs_to_run = 20
     batch_size = 32
     img_size = 224
 
@@ -35,11 +37,9 @@ def main():
 
     print("\n[开始炼丹]...预计 3 分钟内完成您电脑书桌专属车厢的构建！")
 
-    dataset_yaml = os.path.join(project_root, "data", "statefarm_cls")
+    dataset_yaml = os.path.join(project_root, "data", "desk_domain_cls")
 
     # 开始微调训练
-    # 冻结部分底层特征层（让它别把认出车子的经验给忘了），只训练顶部分类器
-    # freeze=10 意味着锁死前 10 层的金刚坏体
     results = model.train(
         data=dataset_yaml,
         epochs=epochs_to_run,
@@ -47,7 +47,6 @@ def main():
         batch=batch_size,
         device=device_type,
         name="domain_adapted_cls_final",
-        freeze=10,
         patience=5,  # 如果没有长进，5个周期就停止
         exist_ok=True,  # 允许覆盖
     )
