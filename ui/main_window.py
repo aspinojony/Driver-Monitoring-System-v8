@@ -355,10 +355,10 @@ class MainWindow(QMainWindow):
         param_layout.addWidget(self.slider_conf)
 
         # 3. Behavior Smoothing
-        self.lbl_smooth = QLabel("特征信号滑动窗口延迟 (Smooth): 15帧 (0.5秒)")
+        self.lbl_smooth = QLabel("特征信号防抖延迟 (Smooth): 45帧 (1.5秒)")
         self.slider_smooth = QSlider(Qt.Orientation.Horizontal)
         self.slider_smooth.setRange(5, 90)
-        self.slider_smooth.setValue(15)
+        self.slider_smooth.setValue(45)
         self.slider_smooth.valueChanged.connect(self.update_smooth)
         param_layout.addWidget(self.lbl_smooth)
         param_layout.addWidget(self.slider_smooth)

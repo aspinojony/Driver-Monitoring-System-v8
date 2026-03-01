@@ -22,14 +22,16 @@ ALARM_DISTRACT_SOUND = "/System/Library/Sounds/Ping.aiff"
 
 # ---- 核心业务逻辑阈值 ----
 # 疲劳检测 (MediaPipe 耳目张合度设置)
-PERCLOS_WINDOW_FRAMES = 300  # 统计区间帧数 (以30FPS计，约10秒)
-PERCLOS_DANGER_THRESHOLD = 0.40  # 10秒内超过 40% 时间闭眼则极度危险报警
-CONTINUOUS_BLINK_FRAMES = 15  # 连续闭眼多少次算极度疲劳/睡着 (15帧即0.5秒)
-CONTINUOUS_YAWN_FRAMES = 15  # 连续张大嘴多少次算哈欠
+PERCLOS_WINDOW_FRAMES = 450  # 统计区间帧数 (大幅延长到15秒的判定周期)
+PERCLOS_DANGER_THRESHOLD = 0.50  # 15秒内有 >50% 的时间闭眼才报警
+CONTINUOUS_BLINK_FRAMES = 45  # 连续闭眼帧数 (45帧 = 1.5秒，允许一般的缓慢眨目)
+CONTINUOUS_YAWN_FRAMES = 60  # 连续张嘴帧数 (60帧 = 2秒，防止讲话张嘴被误抓)
 
 # 行为识别 (YOLO 行为敏感度配置)
-BEHAVIOR_SMOOTHING_ALPHA = 0.20  # EMA 指数平滑过滤器的融合系数 (越小越稳定，越大越灵敏)
-BEHAVIOR_TRUST_THRESHOLD = 0.85  # 置信度积累到多少才确信违规 (避免闪烁)
+BEHAVIOR_SMOOTHING_ALPHA = (
+    0.05  # EMA 融合系数极度下调 (0.05表示行为必须持续数秒才能冲破报警线)
+)
+BEHAVIOR_TRUST_THRESHOLD = 0.96  # 极度置信度 (必须有超强的确凿证据才允许零延迟触发)
 
 # ---- 系统显示/UI 配置 ----
 UI_FPS_LIMIT = 30  # 界面更新最大帧率

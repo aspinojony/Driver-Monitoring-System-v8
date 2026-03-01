@@ -119,12 +119,12 @@ class BehaviorDetector:
         # 4. 最终裁决：触发器逻辑
         final_behavior = "正常驾驶"
 
-        # 【触发机制 A: 零延迟确凿证据】如果模型瞬间爆出极高的置信度 (>0.85)，无视所有历史缓冲，立刻报警！
+        # 【触发机制 A: 零延迟确凿证据】如果模型瞬间爆出极高的置信度 (>0.96)，无视所有历史缓冲，立刻报警！
         if instant_danger >= self.instant_trigger_threshold:
             final_behavior = frame_behavior
 
-        # 【触发机制 B: 模糊积攒防抖】即使某一帧只有 0.45 的置信度，但如果在 15 帧内或者 EMA 均值累积到警戒水位，则报警！
-        elif abnormal_ratio >= 0.50 or self.ema_danger_score > 0.40:
+        # 【触发机制 B: 模糊积攒防抖】必须在一段时间内高达 85% 是违规状态，或者 EMA 平滑指数重度超标才报警，杜绝偶然误判
+        elif abnormal_ratio >= 0.85 or self.ema_danger_score > 0.65:
             from collections import Counter
 
             abnormal_acts = [b for b in self.behavior_history if "正常" not in b]
