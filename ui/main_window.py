@@ -308,13 +308,21 @@ class MainWindow(QMainWindow):
         control_layout.setSpacing(10)
 
         self.source_combo = QComboBox()
-        self.source_combo.addItems(["摄像头 (0)", "本地视频 / 图片", "RTSP 网络流"])
-        control_layout.addWidget(QLabel("选择数据源:"))
+        self.source_combo.addItems(
+            [
+                "默认前置摄像头 (ID:0)",
+                "外接/手机接力摄像头 (ID:1)",
+                "外接/虚拟摄像头 (ID:2)",
+                "本地录像测试 (mp4/avi...)",
+                "RTSP 网络工控流",
+            ]
+        )
+        control_layout.addWidget(QLabel("选择监测数据源:"))
         control_layout.addWidget(self.source_combo)
 
         # CLAHE Checkbox
-        self.chk_clahe = QCheckBox("启用 CLAHE 直方图环境光自适应计算")
-        self.chk_clahe.setStyleSheet("color: #cdd6f4; font-weight: bold;")
+        self.chk_clahe = QCheckBox("启用 CLAHE 直方图环境光自适应增强")
+        self.chk_clahe.setStyleSheet("color: #e0e0e0; font-weight: bold;")
         self.chk_clahe.setChecked(False)
         self.chk_clahe.toggled.connect(self.toggle_clahe)
         control_layout.addWidget(self.chk_clahe)
@@ -340,7 +348,7 @@ class MainWindow(QMainWindow):
 
         # 1. auto tune fatigue
         self.chk_auto_tune = QCheckBox("启用 EAR/MAR 动态自适应阈值回归")
-        self.chk_auto_tune.setStyleSheet("color: #cdd6f4; font-weight: bold;")
+        self.chk_auto_tune.setStyleSheet("color: #e0e0e0; font-weight: bold;")
         self.chk_auto_tune.setChecked(True)
         self.chk_auto_tune.toggled.connect(self.toggle_auto_tune)
         param_layout.addWidget(self.chk_auto_tune)
@@ -431,15 +439,24 @@ class MainWindow(QMainWindow):
     def start_detection(self):
         source_idx = self.source_combo.currentIndex()
         source = 0
-        if source_idx == 1:
+
+        if source_idx == 0:
+            source = 0
+        elif source_idx == 1:
+            source = 1
+        elif source_idx == 2:
+            source = 2
+        elif source_idx == 3:
             file_name, _ = QFileDialog.getOpenFileName(
-                self, "Open Video File", "", "Video Files (*.mp4 *.avi *.jpg *.png)"
+                self,
+                "打开本地测试视频",
+                "",
+                "Video Files (*.mp4 *.avi *.mov *.jpg *.png)",
             )
             if not file_name:
                 return
             source = file_name
-        elif source_idx == 2:
-            # For demonstration, prompt RTSP url could be added here
+        elif source_idx == 4:
             source = "rtsp://example_stream"
 
         self.thread = VideoThread(
