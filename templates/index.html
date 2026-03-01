@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Driver Monitoring AI - Command Center</title>
+    <!-- Dark, Industrial Aesthetic -->
+    <style>
+      body {
+        background-color: #1a1a1a;
+        color: #ffffff;
+        font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+        margin: 0;
+        padding: 20px;
+      }
+      h1 {
+        text-transform: uppercase;
+        font-size: 20px;
+        color: #0078d7;
+        display: flex;
+        align-items: center;
+        border-bottom: 2px solid #333;
+        padding-bottom: 10px;
+      }
+      .container {
+        display: flex;
+        gap: 20px;
+      }
+      .video-box {
+        flex: 2;
+        border: 2px solid #444;
+        background: #000;
+        padding: 5px;
+      }
+      .video-box img {
+        width: 100%;
+        height: auto;
+        border: 1px solid #222;
+      }
+      .sidebar {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+      }
+      .card {
+        background-color: #242424;
+        border: 1px solid #444;
+        padding: 15px;
+        text-align: center;
+      }
+      .card .title {
+        font-size: 13px;
+        color: #aaa;
+        margin-bottom: 10px;
+      }
+      .card .value {
+        font-size: 28px;
+        font-weight: bold;
+      }
+      /* Status Colors */
+      .color-safe {
+        color: #107c10;
+        border-color: #107c10 !important;
+      }
+      .color-warn {
+        color: #ffb900;
+        border-color: #ffb900 !important;
+      }
+      .color-crit {
+        color: #d13438;
+        background: #5a1215;
+        border-color: #d13438 !important;
+      }
+
+      button {
+        background-color: #0078d7;
+        color: white;
+        border: none;
+        padding: 15px;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        text-transform: uppercase;
+      }
+      button:hover {
+        background-color: #106ebe;
+      }
+      button.export-btn {
+        background-color: #107c10;
+      }
+      button.export-btn:hover {
+        background-color: #0b5a0b;
+      }
+
+      .controls {
+        margin-top: 15px;
+        display: flex;
+        gap: 10px;
+      }
+      select {
+        padding: 10px;
+        background: #333;
+        color: white;
+        border: 1px solid #555;
+        flex: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>AI Driver Holographic Monitoring System (Web Dashboard)</h1>
+
+    <div class="container">
+      <!-- Live Video -->
+      <div class="video-box">
+        <img src="/video_feed" alt="Video Stream" id="video-stream" />
+      </div>
+
+      <!-- Metrics -->
+      <div class="sidebar">
+        <div class="controls">
+          <select id="camera-select" onchange="changeCamera()">
+            <option value="0">默认摄像头 (ID: 0)</option>
+            <option value="1">外接/接力摄像头 (ID: 1)</option>
+            <option value="2">虚拟摄像头 (ID: 2)</option>
+          </select>
+        </div>
+        <button class="export-btn" onclick="exportReport()">
+          📊 导出并物理打开体检报告
+        </button>
+
+        <div class="card" id="card-behavior">
+          <div class="title">驾驶行为追踪分析</div>
+          <div class="value" id="val-behavior">初始化...</div>
+        </div>
+
+        <div class="card" id="card-fatigue">
+          <div class="title">视觉疲劳系统评估</div>
+          <div class="value" id="val-fatigue">初始化...</div>
+        </div>
+
+        <div style="display: flex; gap: 15px">
+          <div class="card" style="flex: 1">
+            <div class="title">结构特征 EAR</div>
+            <div class="value" id="val-ear" style="font-size: 20px">--</div>
+          </div>
+          <div class="card" style="flex: 1">
+            <div class="title">结构特征 MAR</div>
+            <div class="value" id="val-mar" style="font-size: 20px">--</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Start polling for stats
+      setInterval(fetchStats, 200);
+
+      function fetchStats() {
+        fetch("/stats")
+          .then((response) => response.json())
+          .then((data) => {
+            // Update EAR / MAR
+            if (data.ear !== undefined)
+              document.getElementById("val-ear").innerText = parseFloat(
+                data.ear,
+              ).toFixed(2);
+            if (data.mar !== undefined)
+              document.getElementById("val-mar").innerText = parseFloat(
+                data.mar,
+              ).toFixed(2);
+
+            // Behavior
+            const behaviorLabel = document.getElementById("val-behavior");
+            const behaviorCard = document.getElementById("card-behavior");
+            behaviorLabel.innerText = data.behavior_state || "等待捕捉...";
+            if (data.behavior_state && data.behavior_state.includes("正常")) {
+              behaviorCard.className = "card color-safe";
+            } else if (
+              data.behavior_state &&
+              data.behavior_state !== "等待捕捉..."
+            ) {
+              behaviorCard.className = "card color-crit";
+            } else {
+              behaviorCard.className = "card";
+            }
+
+            // Fatigue
+            const fatigueLabel = document.getElementById("val-fatigue");
+            const fatigueCard = document.getElementById("card-fatigue");
+            fatigueLabel.innerText = data.fatigue_state || "等待捕捉...";
+            if (data.fatigue_state && data.fatigue_state.includes("正常")) {
+              fatigueCard.className = "card color-safe";
+            } else if (
+              data.fatigue_state &&
+              data.fatigue_state.includes("极度")
+            ) {
+              fatigueCard.className = "card color-crit";
+            } else if (
+              data.fatigue_state &&
+              data.fatigue_state !== "等待捕捉..."
+            ) {
+              fatigueCard.className = "card color-warn";
+            } else {
+              fatigueCard.className = "card";
+            }
+          })
+          .catch((err) => console.error(err));
+      }
+
+      function changeCamera() {
+        const camId = document.getElementById("camera-select").value;
+        fetch("/change_camera/" + camId)
+          .then((response) => response.json())
+          .then((data) => console.log("Switched to camera: " + data.camera_id));
+      }
+
+      function exportReport() {
+        fetch("/export")
+          .then((response) => response.json())
+          .then((data) =>
+            alert(
+              "✅ 临床级安全驾驶体检报告已生成并打开！\n存储在您的系统桌面。",
+            ),
+          );
+      }
+    </script>
+  </body>
+</html>
