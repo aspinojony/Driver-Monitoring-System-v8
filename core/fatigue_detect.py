@@ -4,8 +4,16 @@ import cv2
 import threading
 
 
+from core.config import (
+    PERCLOS_WINDOW_FRAMES,
+    PERCLOS_DANGER_THRESHOLD,
+    CONTINUOUS_BLINK_FRAMES,
+    CONTINUOUS_YAWN_FRAMES,
+)
+
+
 class FatigueDetector:
-    def __init__(self, perclos_time_window=300):
+    def __init__(self, perclos_time_window=PERCLOS_WINDOW_FRAMES):
         self.mp_face_mesh = mp.solutions.face_mesh
         self.mp_drawing = mp.solutions.drawing_utils
         self.mp_drawing_styles = mp.solutions.drawing_styles
@@ -19,7 +27,7 @@ class FatigueDetector:
             min_tracking_confidence=0.2,  # Keep tracking even if face is blurred
         )
 
-        # PERCLOS variables (default 300 frames, approx 10s at 30 fps)
+        # PERCLOS variables (from config)
         self.perclos_time_window = perclos_time_window
         self.history = []
 
@@ -206,13 +214,15 @@ class FatigueDetector:
                 self.blink_frames = 0
 
             # Determine State based on Continuous Counters
-            if perclos > 0.4:  # 40% time eyes closed in the last 10 seconds -> Danger
+            if perclos > PERCLOS_DANGER_THRESHOLD:
                 fatigue_level = "极度疲劳 (PERCLOS超标)"
-            elif self.blink_frames > 15:  # 连续闭眼超过 0.5 秒，绝非正常眨眼！
-                fatigue_level = "极度疲劳" if self.blink_frames > 30 else "闭眼"
-            elif (
-                self.yawn_frames > 15
-            ):  # 连续张大嘴巴超过 0.5 秒，说明在打哈欠而不是说话！
+            elif self.blink_frames > CONTINUOUS_BLINK_FRAMES:
+                fatigue_level = (
+                    "极度疲劳"
+                    if self.blink_frames > CONTINUOUS_BLINK_FRAMES * 2
+                    else "闭眼"
+                )
+            elif self.yawn_frames > CONTINUOUS_YAWN_FRAMES:
                 fatigue_level = "打哈欠"
             else:
                 fatigue_level = "正常"

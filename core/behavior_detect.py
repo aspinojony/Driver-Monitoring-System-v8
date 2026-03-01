@@ -1,47 +1,41 @@
 import os
 from ultralytics import YOLO
 
+from core.config import (
+    BEHAVIOR_MODEL_PATH,
+    BEHAVIOR_SMOOTHING_ALPHA,
+    BEHAVIOR_TRUST_THRESHOLD,
+)
+
 
 class BehaviorDetector:
-    def __init__(self, model_path=None, confidence_threshold=0.30, smoothing_window=15):
+    def __init__(self, confidence_threshold=0.30, smoothing_window=15):
         """
         Load YOLOv8 model for behavior detection.
-        In a real scenario, this would load weights trained to detect Normal,
-        Smoking, and Using Phone.
         """
         self.confidence_threshold = confidence_threshold
-        self.behavior_history = []  # Empty initially to support single-image analysis
+        self.behavior_history = []
         self.smoothing_window = smoothing_window
 
         # EMA (Exponential Moving Average) & 滞回滤波参数
         self.ema_danger_score = 0.0
-        self.alpha = 0.3  # EMA学习率
-        self.instant_trigger_threshold = (
-            0.70  # 确凿证据阈值 (0延迟)，针对桌面测试大幅下调
-        )
-        if model_path is None:
-            model_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "runs",
-                "classify",
-                "domain_adapted_cls_final",
-                "weights",
-                "best.pt",
+        self.alpha = BEHAVIOR_SMOOTHING_ALPHA  # EMA学习率
+        self.instant_trigger_threshold = BEHAVIOR_TRUST_THRESHOLD
+
+        # Load global model path
+        model_path = BEHAVIOR_MODEL_PATH
+
+        if not os.path.exists(model_path):
+            print(
+                f"⚠️ 找不到最新满血版权重 {model_path}，请确认 finetune_domain_gap.py 已运行完毕！"
             )
 
-            # Fallback for old detection model if cls doesn't exist
-            if not os.path.exists(model_path):
-                model_path = os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                    "data",
-                    "weights",
-                    "yolov8n_driver_behavior2",
-                    "weights",
-                    "best.pt",
-                )
-
-        # We load a small model purely for demonstration
         self.model = YOLO(model_path)
+
+    def reset_tracker(self):
+        """重置历史队列避免数据残留干扰"""
+        self.behavior_history.clear()
+        self.ema_danger_score = 0.0
 
     def process_frame(self, frame):
         """

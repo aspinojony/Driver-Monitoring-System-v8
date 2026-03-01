@@ -22,8 +22,8 @@ from PyQt6.QtCore import QThread, pyqtSignal, Qt, QUrl
 from PyQt6.QtGui import QImage, QPixmap, QFont
 from PyQt6.QtMultimedia import QSoundEffect
 
-from core.fatigue_detect import FatigueDetector
-from core.behavior_detect import BehaviorDetector
+from core.engine import MonitoringEngine
+from core.config import ALARM_FATIGUE_SOUND, ALARM_DISTRACT_SOUND
 
 
 class VideoThread(QThread):
@@ -31,17 +31,13 @@ class VideoThread(QThread):
     update_stats_signal = pyqtSignal(float, float, str, str)
     log_signal = pyqtSignal(str)
 
-    def __init__(self, fatigue_detector, behavior_detector, source=0, use_clahe=False):
+    def __init__(self, engine, source=0, use_clahe=False):
         super().__init__()
         self._run_flag = True
         self.source = source
         self.use_clahe = use_clahe
-        self.fatigue_detector = fatigue_detector
-        self.behavior_detector = behavior_detector
-
-        # 清空上一次的残余状态，以便新视频/图片不受干扰
-        self.fatigue_detector.reset_tracker()
-        self.behavior_detector.behavior_history.clear()
+        self.engine = engine
+        self.engine.reset()
         self.last_beep_time = 0  # Cooldown for audio alarm
 
         # Throttles
@@ -50,21 +46,13 @@ class VideoThread(QThread):
         self.last_log_time = 0
         self.last_tts_time = 0
 
-        # 将夜视提亮强度（限制对比度）拉到极限的8.0版本，暴力提取暗光边缘
-        self.clahe = cv2.createCLAHE(clipLimit=8.0, tileGridSize=(8, 8))
-
-        # Initialize cross-platform warning sound (Ping is much sharper and sounds like an alert)
+        # 从全局 config 加载跨平台音频文件位置
         self.alarm_sound = QSoundEffect()
-        self.alarm_sound.setSource(
-            QUrl.fromLocalFile("/System/Library/Sounds/Ping.aiff")
-        )
+        self.alarm_sound.setSource(QUrl.fromLocalFile(ALARM_DISTRACT_SOUND))
         self.alarm_sound.setVolume(1.0)
 
-        # Initialize CRITICAL warning sound (Loud, sharp glass breaking or high pitch)
         self.critical_alarm_sound = QSoundEffect()
-        self.critical_alarm_sound.setSource(
-            QUrl.fromLocalFile("/System/Library/Sounds/Glass.aiff")
-        )
+        self.critical_alarm_sound.setSource(QUrl.fromLocalFile(ALARM_FATIGUE_SOUND))
         self.critical_alarm_sound.setVolume(1.0)
 
         # 独立的帧队列分离视频采集和模型推理
@@ -132,44 +120,18 @@ class VideoThread(QThread):
                 if str(self.source).isdigit() or self.source == 0:
                     cv_img = cv2.flip(cv_img, 1)
 
-                # 0. Image Enhancement (Smart Auto-Night-Vision)
-                if self.use_clahe:
-                    # 计算画面平均亮度 (0 是纯黑，255 是纯白)
-                    gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
-                    avg_brightness = np.mean(gray)
+                # 核心升级：一键调用 AI 引擎，屏蔽底层所有算法的脏活累活
+                cv_img, results = self.engine.process_frame(cv_img, self.use_clahe)
 
-                    # 只有在画面环境真的很暗（平均亮度 < 80）时，才暴力提亮。防止白天过曝！
-                    if avg_brightness < 80:
-                        # Convert to LAB color space
-                        lab = cv2.cvtColor(cv_img, cv2.COLOR_BGR2LAB)
-                        l, a, b = cv2.split(lab)
-                        # Apply CLAHE to L-channel
-                        cl = self.clahe.apply(l)
-                        # Merge and convert back to BGR
-                        limg = cv2.merge((cl, a, b))
-                        cv_img = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
-
-                # 1. Behavior Detection (YOLO) - Process every frame so the EMA filter can accumulate cleanly
-                cv_img, behavior = self.behavior_detector.process_frame(cv_img)
-
-                # Make sure the array is completely mutable and contiguous in memory
-                # This explicitly solves the OpenCV (-5:Bad argument) readonly errors natively on macOS Metal
-                cv_img = np.ascontiguousarray(cv_img.copy())
-
-                # 2. Fatigue Detection (MediaPipe) - Runs constantly to ensure PERCLOS and EAR are precise
-                ear, mar, fatigue_level = self.fatigue_detector.process_frame(cv_img)
-
-                # 3. Visual & Audio Warning System (Escalating Alarm System)
-                is_warning = ("正常" not in fatigue_level) or ("正常" not in behavior)
-                is_critical = "极度疲劳" in fatigue_level  # 触发致命的连环警报
+                behavior = results["behavior_state"]
+                fatigue_level = results["fatigue_state"]
+                ear, mar = results["ear"], results["mar"]
+                is_warning = results["is_warning"]
+                is_critical = results["is_critical"]
 
                 current_time = time.time()
 
                 if is_warning:
-                    h, w = cv_img.shape[:2]
-                    # 极度疲劳时，红框加倍粗，视觉压迫感拉满
-                    border_thickness = 35 if is_critical else 15
-                    cv2.rectangle(cv_img, (0, 0), (w, h), (0, 0, 255), border_thickness)
 
                     if is_critical:
                         # 极度危险：取消 3 秒冷却，改为 0.5 秒夺命连环 Call，并播放刺耳音效
@@ -251,11 +213,10 @@ class MainWindow(QMainWindow):
         self.resize(1024, 768)
         self.thread = None
 
-        # 🟢 在全局启动时单例加载模型并常驻内存（彻底消灭卡顿）
-        print("正在全局初始化深度学习模型，请稍候...")
-        self.global_fatigue_detector = FatigueDetector()
-        self.global_behavior_detector = BehaviorDetector()
-        print("模型加载完毕！")
+        # 🟢 在全局启动时单例加载引擎并常驻内存（彻底消灭卡顿）
+        print("正在全局初始化 AI 核心引擎，请稍候...")
+        self.global_engine = MonitoringEngine()
+        print("引擎及其背后相关模型加载完毕！")
 
         self._init_ui()
 
@@ -468,8 +429,7 @@ class MainWindow(QMainWindow):
             source = "rtsp://example_stream"
 
         self.thread = VideoThread(
-            fatigue_detector=self.global_fatigue_detector,
-            behavior_detector=self.global_behavior_detector,
+            engine=self.global_engine,
             source=source,
             use_clahe=self.chk_clahe.isChecked(),
         )
