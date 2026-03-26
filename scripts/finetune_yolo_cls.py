@@ -1,11 +1,14 @@
 import os
 from ultralytics import YOLO
+from save_training_results import archive_training_run
 
 
 def main():
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
     # 1. 找到你之前已经辛辛苦苦练好的 "老大" 模型
     old_best_model_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        project_root,
         "data",
         "weights",
         "yolov8n_driver_cls",
@@ -22,7 +25,7 @@ def main():
     #   │   └── ...
     #   └── val/
     new_dataset_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        project_root,
         "data",
         "new_night_data",
     )
@@ -47,14 +50,16 @@ def main():
 
     # 3. 开始微调（Fine-Tuning）
     # 设置存入的文件夹名字为 finetuned_driver_cls
+    train_project = os.path.join(project_root, "data", "weights")
+    train_name = "finetuned_yolov8_cls"
     results = model.train(
         data=new_dataset_dir,  # 指向新的文件夹
         epochs=10,  # 因为老大哥已经很聪明了，这里只需要稍微用 10-20 轮学新视角的特征即可
         imgsz=64,  # 依然保持和原来一样的图片大小要求
         batch=32,  # 苹果 M 芯片无压力
         device="mps",  # 开启苹果芯片专门的高速 GPU 加速
-        project="data/weights",  # 新练出来的加强版模型保存路径
-        name="finetuned_yolov8_cls",  # 新文件夹名字
+        project=train_project,  # 新练出来的加强版模型保存路径
+        name=train_name,  # 新文件夹名字
         val=True,  # 训练完验证一下看看加强效果
         # ======== 极其重要：高级数据增强进修版 ========
         hsv_v=0.4,  # !重点 明度巨变 (特别是进修夜间数据，强迫模型忽略低光环境)
@@ -70,6 +75,10 @@ def main():
     print(
         "您可以去修改 core/behavior_detect.py 里的 model_path，让系统享受这个拥有夜晚/正面超能力的新模型了！"
     )
+
+    # 📦 自动归档训练结果
+    run_dir = os.path.join(train_project, train_name)
+    archive_training_run(run_dir, script_name="finetune_yolo_cls")
 
 
 if __name__ == "__main__":

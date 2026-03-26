@@ -1,6 +1,7 @@
 import os
 import torch
 from ultralytics import YOLO
+from save_training_results import archive_training_run
 
 
 def main():
@@ -38,6 +39,7 @@ def main():
     print("\n[开始炼丹]...预计 3 分钟内完成您电脑书桌专属车厢的构建！")
 
     dataset_yaml = os.path.join(project_root, "data", "desk_domain_cls")
+    train_name = "domain_adapted_cls_final"
 
     # 开始微调训练
     results = model.train(
@@ -46,14 +48,18 @@ def main():
         imgsz=img_size,
         batch=batch_size,
         device=device_type,
-        name="domain_adapted_cls_final",
+        name=train_name,
         patience=5,  # 如果没有长进，5个周期就停止
         exist_ok=True,  # 允许覆盖
     )
 
+    # 📦 自动归档训练结果
+    run_dir = os.path.join(project_root, "runs", "classify", train_name)
+    archive_training_run(run_dir, script_name="finetune_domain_gap")
+
     print("\n🎉 微调彻底杀青！")
     print(
-        f"您的专属跨界桌面无敌版权重已经保存在: {os.path.join(project_root, 'runs', 'classify', 'domain_adapted_cls_final', 'weights', 'best.pt')}"
+        f"您的专属跨界桌面无敌版权重已经保存在: {os.path.join(project_root, 'runs', 'classify', train_name, 'weights', 'best.pt')}"
     )
     print(
         "系统下一步将自动把它替换到主程序 (main.py) 里面，届时您再开摄像头测试必将惊为天人！"

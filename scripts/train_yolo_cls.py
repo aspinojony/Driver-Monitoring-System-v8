@@ -1,5 +1,6 @@
 import os
 from ultralytics import YOLO
+from save_training_results import archive_training_run
 
 
 def main():
@@ -16,14 +17,16 @@ def main():
         return
 
     print("Starting YOLOv8 Classification Training for Driver Behavior...")
+    train_project = os.path.join(project_root, "data", "weights")
+    train_name = "yolov8n_driver_cls"
     # Train the model. It automatically detects train/val folders in data_dir
     results = model.train(
         data=data_dir,
         epochs=30,  # Classification converges much faster than detection
         imgsz=224,  # Standard image size for classification
         device="",  # Auto-detect MPS (Mac) or CPU
-        project=os.path.join(project_root, "data", "weights"),
-        name="yolov8n_driver_cls",
+        project=train_project,
+        name=train_name,
         # ======== 极其重要：高级数据增强参数 (分类任务专用版) ========
         hsv_h=0.015,  # 随机色彩变异 (突破车厢内复杂霓虹灯反光)
         hsv_s=0.7,  # 随机颜色的浓淡饱和度
@@ -40,6 +43,10 @@ def main():
     print(
         "Training Complete! The best weights are saved in: data/weights/yolov8n_driver_cls/weights/best.pt"
     )
+
+    # 📦 自动归档训练结果
+    run_dir = os.path.join(train_project, train_name)
+    archive_training_run(run_dir, script_name="train_yolo_cls")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import os
 from ultralytics import YOLO
+from save_training_results import archive_training_run
 
 
 def main():
@@ -17,13 +18,15 @@ def main():
         return
 
     print("Starting YOLOv8 training for Driver Anomaly Detection...")
+    train_project = os.path.join(project_root, "data", "weights")
+    train_name = "yolov8n_driver_behavior"
     results = model.train(
         data=data_yaml_path,
         epochs=100,
         imgsz=640,
         device="",  # set to 'mps' for Apple Silicon, or '0' for CUDA
-        project=os.path.join(project_root, "data", "weights"),
-        name="yolov8n_driver_behavior",
+        project=train_project,
+        name=train_name,
         # ======== 极其重要：在此处实现『高级数据增强参数』 ========
         hsv_h=0.015,  # 随机色彩变异 (突破车厢内复杂霓虹灯、路灯反光)
         hsv_s=0.7,  # 随机颜色的浓淡饱和度
@@ -34,9 +37,13 @@ def main():
         shear=2.0,  # 画面拉伸畸变 (广角镜头的边缘防畸变训练)
         fliplr=0.5,  # 50% 镜像翻转 (左撇子/右撇子司机都能识别)
         mosaic=1.0,  # !重点 100%强制开启将4张图切碎拼一起，彻底打碎车内背景，避免死记硬背！
-        erasing=0.4,  # 40%概率在图片上随机构造一块“黑斑”（完美模拟人员戴口罩、手挡住了一半脸）
+        erasing=0.4,  # 40%概率在图片上随机构造一块"黑斑"（完美模拟人员戴口罩、手挡住了一半脸）
         # =======================================================
     )
+
+    # 📦 自动归档训练结果
+    run_dir = os.path.join(train_project, train_name)
+    archive_training_run(run_dir, script_name="train_yolo")
 
 
 if __name__ == "__main__":
