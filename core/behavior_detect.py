@@ -22,13 +22,15 @@ class BehaviorDetector:
         self.alpha = BEHAVIOR_SMOOTHING_ALPHA  # EMA学习率
         self.instant_trigger_threshold = BEHAVIOR_TRUST_THRESHOLD
 
-        # Load global model path
+        # Load global model path; if custom trained weights are missing,
+        # gracefully fall back to a public YOLOv8 classification model so the app can still run locally.
         model_path = BEHAVIOR_MODEL_PATH
 
         if not os.path.exists(model_path):
             print(
-                f"⚠️ 找不到最新满血版权重 {model_path}，请确认 finetune_domain_gap.py 已运行完毕！"
+                f"⚠️ 找不到最新满血版权重 {model_path}，将自动回退到公开基础模型 yolov8n-cls.pt 以便本地运行。"
             )
+            model_path = "yolov8n-cls.pt"
 
         self.model = YOLO(model_path)
 

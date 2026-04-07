@@ -4,77 +4,145 @@
 
 ### 基于深度学习与空间结构特征的车载多模态感知监控控制台
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python)](#)
+[![Python](https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python)](#)
 [![PyQt6](https://img.shields.io/badge/PyQt6-UI%20Framework-green?style=for-the-badge&logo=qt)](#)
 [![YOLOv8](https://img.shields.io/badge/YOLOv8-Deep%20Learning-orange?style=for-the-badge)](#)
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-Face%20Mesh-red?style=for-the-badge&logo=google)](#)
 [![License](https://img.shields.io/badge/License-MIT-black?style=for-the-badge)](#)
 
-_专为智能座舱环境设计的毫秒级预警引擎，能无视极端暗光环境精准逮捕疲劳与分心驾驶行为。_
+_面向毕业设计答辩与原型演示的驾驶员状态监测系统，结合行为识别与疲劳检测进行实时风险提示。_
 
 </div>
 
 ---
 
-## 🌟 核心功能亮点 (Key Features)
+## 🌟 功能概览
 
-- **🕸️ 468点 3D 面部网格映射**：利用 MediaPipe 高频提取 `极度疲劳(PERCLOS)`、`闭眼(EAR)` 与 `连续哈欠(MAR)`。
-- **🧠 卷积神经网络姿态感知**：搭载经离线数据增强微调的 YOLOv8-cls 骨干网络，可识别 `玩手机`、`抽烟`、`向后转身` 等高达 9 种违章姿态。
-- **🌙 CLAHE 极致暗场营救机制**：当车内极度逆光或进入黑暗隧道导致面部追踪丢失时，系统自动在内存中进行环境光矩阵直方图均衡化解码，实现零延迟断点续传。
-- **🤖 千人千面自适应引擎**：彻底抛弃死板的预设阈值。前 60 帧动态学习驾驶员专属面部基线张量。
-- **🛡️ 滞回滤波防抖矩阵**：独创的时段滑动窗口逻辑 (Smooth Window)，100% 免疫日常唱歌、谈话与短促眨眼造成的误触报警。
-- **📟 工业级多线程流式交互大屏**：基于 PyQt6 编写的全并发客户端，音视频解码与流媒体分析彻底与 UI 主线程剥离。
+- **疲劳检测**：基于 MediaPipe Face Mesh 计算 EAR / MAR / PERCLOS，识别闭眼、打哈欠、疲劳状态。
+- **行为识别**：基于 YOLOv8 分类模型识别分心驾驶行为，如使用手机、喝水、与乘客交谈等。
+- **暗光增强**：支持基于 CLAHE 的低照度增强处理，缓解暗环境下的人脸特征丢失问题。
+- **双端展示**：提供 **PyQt6 桌面端** 与 **Flask Web 控制台** 两种运行入口。
+- **会话记录**：支持事件记录与报告导出，便于展示与论文材料整理。
 
-## ⚙️ 系统架构剖析
+---
 
-![System Architecture](https://img.shields.io/badge/Architecture-Overview-lightgrey?style=for-the-badge)
+## ⚙️ 项目结构
 
-本项目采用**双并发流**进行动作解析，任何一项指标越界均会触发联动：
+```text
+core/         核心算法与推理逻辑
+ui/           PyQt6 桌面端界面
+templates/    Web 版页面模板
+scripts/      数据增强 / 训练辅助脚本
+runs/         分类训练输出（含 best.pt / last.pt）
+data/weights/ 备用/历史模型权重
+main.py       桌面端入口
+web_app.py    Web 演示入口
+```
 
-- `YOLO Worker`: 处理低频大图画幅感知，识别全局躯干违章。
-- `MediaPipe Worker`: 处理极致高频的人脸精微结构抓取。
-- `Feedback Engine`: 根据危险层级，智能渲染 UI 卡片至 🟢安全态、🟡警告态(警示黄色边框) 或 🔴高危态(刺眼警急红，并带有语音 TTS 播报冷却池)。
+---
 
-## 🛠️ 快速安装运行 (Quick Start)
+## 🛠️ 本地运行环境
 
-### 1. 环境准备
+## 推荐版本
 
-项目根目录已提供完整的依赖锁，建议使用虚拟环境：
+- **Python 3.11**
+- macOS / Windows 均可，作者本地开发环境为 macOS
+
+> 说明：项目在较新的 Python 版本上可能遇到依赖兼容问题，建议优先使用 Python 3.11。
+
+### 1. 创建虚拟环境并安装依赖
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+python3.11 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. 补全权重文件 (Weights)
+---
 
-由于模型体积与训练集过大，GitHub 不含原始 `.pt` 权重文件。
-请确保在 `./data/weights/` 目录下放置训练好的 `best.pt` 权重文件。（本项目内置了强大的物理图像增强脚本 `scripts/offline_augment.py` 辅助训练）。
+## 🤖 模型权重说明
 
-### 3. 一键启动终端控制台
+GitHub 仓库默认**不保证包含全部训练权重**。项目运行时主要用到以下文件：
+
+### 行为分类主模型
+
+```text
+runs/classify/domain_adapted_cls_final/weights/best.pt
+```
+
+### 姿态模型（可选/备用）
+
+```text
+data/weights/yolov8n-pose.pt
+```
+
+如果 `best.pt` 缺失，当前代码会自动回退到公开基础模型：
+
+```text
+yolov8n-cls.pt
+```
+
+这样可以保证项目在缺少私有训练权重时也能先启动并演示。
+
+---
+
+## 🚀 启动方式
+
+### 方案 A：启动桌面端（PyQt6）
 
 ```bash
 python main.py
 ```
 
-## 🎥 核心交互模块说明
+### 方案 B：启动 Web 演示版（推荐答辩展示）
 
-| 模块名称           | 技术实现                 | 业务用途                                   |
-| :----------------- | :----------------------- | :----------------------------------------- |
-| **实时推流控制台** | PyQt6 / WebCam 0 / RTSP  | 兼容车内原装摄像头硬件与测试级录像流       |
-| **自适应感光矩阵** | OpenCV CLAHE             | 强行提亮背光暗部特征，极小化检测盲区       |
-| **自适应阈值回归** | Temporal Logic Buffers   | "千人千面"计算，自动推算不同瞳距的闭眼界限 |
-| **多通道异常侦测** | YOLOv8 + Facial Topology | 组合拳侦测：疲劳+违章分心双线并行          |
+```bash
+python web_app.py
+```
 
-## 🧪 高级研究特性及拓展 (For Academic Defense)
+默认访问地址：
 
-本项目专门为论文撰写和架构演示预留了以下深度学习特性切入点：
-
-1. **网络改造前瞻**：推荐在骨干网络中预留 `CBAM` 或 `SE` 注意力层空间，解决背景过拟合。
-2. **端侧推理量化**：已解耦所有运算逻辑，无缝支持转换为 `ONNX` 将模型以 INT8 精度下发至车载 SoC 行车记录仪。
-3. **恶劣物理增强**：内置离线数据强化脚本，一键将数据扩充 3 倍并叠加高斯模糊、矩阵致暗处理。
+- <http://127.0.0.1:5050>
 
 ---
 
-_Developed as a high-fidelity Engineering Prototype / Graduation Project. If this code helps with your academic defense or project landing, consider leaving a ⭐ Star!_
+## 📷 摄像头权限说明（macOS）
+
+首次运行时，如果无法打开摄像头，请在：
+
+- **系统设置 → 隐私与安全性 → 摄像头**
+
+中为当前终端（如 Terminal / iTerm）开启摄像头权限。
+
+---
+
+## 🎥 核心交互模块说明
+
+| 模块名称 | 技术实现 | 业务用途 |
+| :-- | :-- | :-- |
+| 实时推流控制台 | PyQt6 / WebCam / RTSP | 兼容车载摄像头与本地测试摄像头 |
+| 自适应感光增强 | OpenCV CLAHE | 提升暗光场景下的人脸可见性 |
+| 疲劳检测 | MediaPipe Face Mesh | 计算 EAR / MAR / PERCLOS |
+| 行为识别 | YOLOv8 Classification | 识别分心与异常驾驶行为 |
+| 日志导出 | Session Logger | 输出会话事件记录与报告 |
+
+---
+
+## 🧪 适合继续完善的方向
+
+1. 增加更清晰的模型版本说明与训练指标表。
+2. 将训练输出、运行代码、实验素材进一步拆分，提升工程整洁度。
+3. 将 Web 版页面改造成更适合毕业答辩展示的可视化大屏。
+4. 增加统一的一键启动脚本，降低复现门槛。
+
+---
+
+## 📌 说明
+
+本项目适合作为：
+
+- 毕业设计原型系统
+- 智能座舱安全监测演示项目
+- 驾驶员疲劳 / 分心检测方向的工程化展示基础
+
+如果这个项目对你有帮助，欢迎点个 ⭐。

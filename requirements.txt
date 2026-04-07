@@ -6,3 +6,4 @@ opencv-python-headless
 matplotlib
 PyQt6
 numpy
+flask
