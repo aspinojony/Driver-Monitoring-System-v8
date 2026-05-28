@@ -7,3 +7,7 @@ matplotlib
 PyQt6
 numpy
 flask
+flask-socketio
+simple-websocket
+pyqtgraph
+psutil

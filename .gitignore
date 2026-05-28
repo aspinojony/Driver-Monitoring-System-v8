@@ -28,3 +28,8 @@ runs/
 
 # temp office/iCloud lock files
 .~*
+
+# Thesis snapshot backups (kept local; timestamped before risky edits)
+*.backup.docx
+*.before-*.docx
+毕业论文.format-audit.md

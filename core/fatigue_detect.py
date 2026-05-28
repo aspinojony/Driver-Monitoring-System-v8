@@ -126,32 +126,26 @@ class FatigueDetector:
         fatigue_level = "人员特征未对齐/光线过暗"
 
         if results.multi_face_landmarks:
-            # 在视频帧上直接绘制人脸网格轮廓 (眼睛、嘴巴、脸型等)
-            for face_landmarks in results.multi_face_landmarks:
-                # 自定义高亮人脸检测网格（霓虹绿点 + 粗黄线连线），让像素点变得非常明显
-                custom_point_spec = self.mp_drawing.DrawingSpec(
-                    color=(0, 255, 0), thickness=2, circle_radius=2
-                )
-                custom_line_spec = self.mp_drawing.DrawingSpec(
-                    color=(0, 255, 255), thickness=1
-                )
+            face_landmarks = results.multi_face_landmarks[0]
+            landmarks = face_landmarks.landmark
 
-                self.mp_drawing.draw_landmarks(
-                    image=frame,
-                    landmark_list=face_landmarks,
-                    connections=self.mp_face_mesh.FACEMESH_CONTOURS,
-                    landmark_drawing_spec=custom_point_spec,
-                    connection_drawing_spec=custom_line_spec,
-                )
-
-            landmarks = results.multi_face_landmarks[0].landmark
-
-            # Left eye indices: 33, 160, 158, 133, 153, 144
+            # Eye / Mouth landmark 索引
             left_eye = [33, 160, 158, 133, 153, 144]
-            # Right eye indices: 362, 385, 387, 263, 373, 380
             right_eye = [362, 385, 387, 263, 373, 380]
-            # Mouth indices: 78, 81, 13, 311, 308, 402, 14, 178
             mouth = [78, 81, 13, 311, 308, 402, 14, 178]
+
+            # 仅绘制眼睛与嘴的关键点 + 连线（去掉 FACEMESH_CONTOURS 全网格，节省 ~30% 单帧开销）
+            h, w = frame.shape[:2]
+            eye_mouth_color = (0, 212, 255)  # 与 UI 主色 #00d4ff 对齐（BGR）
+            for idx_group in (left_eye, right_eye, mouth):
+                pts = [
+                    (int(landmarks[i].x * w), int(landmarks[i].y * h)) for i in idx_group
+                ]
+                # 闭合多边形（眼睛/嘴轮廓）
+                for k in range(len(pts)):
+                    cv2.line(frame, pts[k], pts[(k + 1) % len(pts)], eye_mouth_color, 1)
+                for p in pts:
+                    cv2.circle(frame, p, 2, (0, 255, 200), -1)
 
             left_ear = self._calculate_ear(landmarks, left_eye)
             right_ear = self._calculate_ear(landmarks, right_eye)

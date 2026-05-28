@@ -4,11 +4,7 @@ from datetime import datetime
 
 
 class SessionLogger:
-    """
-    会话日志与数据报表中心 (Session Analytics Logger)
-    专门用于统计驾车时长、疲劳次数、分心次数，并生成带有时间戳的物理报告文件。
-    极大地提升了项目的学术完整性和商业产品质感。
-    """
+    """会话日志与报告导出。统计驾驶时长、疲劳/分心事件，生成 TXT/HTML 报告。"""
 
     def __init__(self):
         self.start_time = time.time()
@@ -26,7 +22,7 @@ class SessionLogger:
 
     def log_event(self, behavior, fatigue, is_critical):
         current = time.time()
-        # 日志防刷屏冷却 (只记录每2秒内最严重的一次)
+        # 2 秒冷却，防止刷屏
         if current - self.last_log_time < 2.0:
             return
 
@@ -53,40 +49,38 @@ class SessionLogger:
 
         report_content = [
             "=" * 60,
-            "               📊 驾驶员全息健康监控总表 (Session Report)",
+            "                  驾驶员监控会话报告",
             "=" * 60,
-            f" 📅 报告生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f" ⏱️ 本次驾驶总长: {mins} 分钟 {secs} 秒",
+            f" 报告生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f" 本次驾驶总长: {mins} 分 {secs} 秒",
             "-" * 60,
-            f" ⚠️ 疲劳驾驶触发: {self.fatigue_count} 次",
-            f" 📱 分心驾驶触发: {self.distraction_count} 次",
+            f" 疲劳事件触发: {self.fatigue_count} 次",
+            f" 分心事件触发: {self.distraction_count} 次",
             "-" * 60,
-            "【危险事件详细追溯 / Event Tracking】",
+            "【事件追溯 / Event Tracking】",
         ]
 
         if not self.events:
-            report_content.append("    ✅ 恭喜！本次检测全程无违规行为，驾驶记录完美！")
+            report_content.append("    本次会话全程无违规行为。")
         else:
             for idx, event in enumerate(self.events, 1):
-                crit_marker = "🚨[极度危险]" if event["critical"] else "⚠️[一般违规]"
-                # 截断展示，防止文字过长
+                crit_marker = "[严重]" if event["critical"] else "[一般]"
                 report_content.append(
-                    f" {idx:02d}. {event['time']} | {crit_marker} 动作: {event['behavior'][:6]:<6} | 精神: {event['fatigue']}"
+                    f" {idx:02d}. {event['time']} | {crit_marker} 行为: {event['behavior'][:8]:<8} | 疲劳: {event['fatigue']}"
                 )
 
         report_content.append("=" * 60)
         report_content.append(
-            " 系统评价: "
+            " 综合评价: "
             + (
-                "极度危险，建议强制休息！"
+                "高风险，建议立即休息"
                 if (self.fatigue_count > 5 or self.distraction_count > 10)
-                else "状况良好，请保持。"
+                else "低风险"
             )
         )
 
         final_text = "\n".join(report_content)
 
-        # 写入文件
         with open(save_path, "w", encoding="utf-8") as f:
             f.write(final_text)
 

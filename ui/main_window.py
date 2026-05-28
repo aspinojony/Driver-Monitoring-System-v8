@@ -1,609 +1,845 @@
+"""DMS 桌面端主窗口 (v2)
+
+特斯拉驾舱风设计：
+- 深色背景 + 霓虹蓝主色 + 状态色（safe/warn/critical）
+- pyqtgraph 实时 EAR/MAR 折线图
+- 自定义环形风险仪表（QPainter）
+- 8 类行为置信度条形列
+- 事件时间轴
+
+修复要点（相对 v1）：
+- 修复 self.global_fatigue_detector / self.global_behavior_detector 不存在的崩溃
+- 镜像统一走 core.config.MIRROR_CAMERA_FRAME
+- closeEvent 安全释放线程
+- 摄像头索引解析与 select 实际编号匹配
+"""
+
+import collections
+import math
+import subprocess
+import time
+from datetime import datetime
+
 import cv2
 import numpy as np
-import time
-import subprocess
-import threading
-import queue
+
+from PyQt6.QtCore import Qt, QThread, QTimer, QUrl, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QImage, QPainter, QPen, QPixmap
+from PyQt6.QtMultimedia import QSoundEffect
 from PyQt6.QtWidgets import (
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QTextEdit,
+    QApplication,
+    QCheckBox,
     QComboBox,
     QFileDialog,
-    QGroupBox,
-    QCheckBox,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QProgressBar,
+    QPushButton,
+    QSizePolicy,
     QSlider,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import QThread, pyqtSignal, Qt, QUrl
-from PyQt6.QtGui import QImage, QPixmap, QFont
-from PyQt6.QtMultimedia import QSoundEffect
 
+try:
+    import pyqtgraph as pg
+
+    HAS_PG = True
+except ImportError:
+    HAS_PG = False
+
+from core.config import ALARM_DISTRACT_SOUND, ALARM_FATIGUE_SOUND, MIRROR_CAMERA_FRAME
 from core.engine import MonitoringEngine
-from core.config import ALARM_FATIGUE_SOUND, ALARM_DISTRACT_SOUND
+
+# ==========================================================================
+# 配色（与 Web 端保持一致）
+# ==========================================================================
+COLOR_BG_0 = "#050810"
+COLOR_BG_1 = "#0a0e1a"
+COLOR_BG_2 = "#121829"
+COLOR_LINE = "#1f2942"
+COLOR_TEXT_1 = "#e6ebff"
+COLOR_TEXT_2 = "#97a3c4"
+COLOR_TEXT_3 = "#5b6789"
+COLOR_ACCENT = "#00d4ff"
+COLOR_SAFE = "#34c759"
+COLOR_WARN = "#ffb300"
+COLOR_CRIT = "#ff3b30"
 
 
+GLOBAL_QSS = f"""
+QMainWindow, QWidget {{
+    background-color: {COLOR_BG_0};
+    color: {COLOR_TEXT_1};
+    font-family: "SF Pro Display", "Inter", "PingFang SC", "Microsoft YaHei", sans-serif;
+}}
+QFrame#card {{
+    background-color: {COLOR_BG_1};
+    border: 1px solid {COLOR_LINE};
+    border-radius: 10px;
+}}
+QLabel#cardTitle {{
+    color: {COLOR_TEXT_2};
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+}}
+QLabel#cardValue {{
+    color: {COLOR_TEXT_1};
+    font-size: 28px;
+    font-weight: 300;
+}}
+QLabel#cardValueAccent {{
+    color: {COLOR_ACCENT};
+    font-size: 28px;
+    font-weight: 300;
+}}
+QLabel#brand {{
+    color: {COLOR_ACCENT};
+    font-size: 22px;
+    font-weight: 200;
+    letter-spacing: 5px;
+}}
+QPushButton {{
+    background-color: {COLOR_BG_2};
+    color: {COLOR_TEXT_1};
+    border: 1px solid {COLOR_LINE};
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+}}
+QPushButton:hover {{
+    border-color: {COLOR_ACCENT};
+    color: {COLOR_ACCENT};
+}}
+QPushButton#primary {{
+    background-color: {COLOR_ACCENT};
+    color: #001220;
+    font-weight: 600;
+}}
+QPushButton#primary:hover {{
+    background-color: #00f0ff;
+}}
+QPushButton#danger {{
+    background-color: transparent;
+    color: {COLOR_CRIT};
+    border-color: {COLOR_CRIT};
+}}
+QComboBox {{
+    background-color: {COLOR_BG_2};
+    color: {COLOR_TEXT_1};
+    border: 1px solid {COLOR_LINE};
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+}}
+QComboBox QAbstractItemView {{
+    background-color: {COLOR_BG_2};
+    color: {COLOR_TEXT_1};
+    selection-background-color: {COLOR_ACCENT};
+    selection-color: #001220;
+}}
+QCheckBox {{
+    color: {COLOR_TEXT_2};
+    font-size: 12px;
+    spacing: 8px;
+}}
+QSlider::groove:horizontal {{
+    border: 1px solid {COLOR_LINE};
+    height: 4px;
+    border-radius: 2px;
+    background: {COLOR_BG_2};
+}}
+QSlider::handle:horizontal {{
+    background: {COLOR_ACCENT};
+    border: none;
+    width: 14px;
+    margin: -6px 0;
+    border-radius: 7px;
+}}
+QTextEdit {{
+    background-color: {COLOR_BG_0};
+    color: {COLOR_TEXT_2};
+    border: 1px solid {COLOR_LINE};
+    border-radius: 8px;
+    padding: 8px;
+    font-family: "SF Mono", "Menlo", monospace;
+    font-size: 11px;
+}}
+QProgressBar {{
+    background-color: {COLOR_BG_2};
+    border: 1px solid {COLOR_LINE};
+    border-radius: 4px;
+    text-align: right;
+    color: {COLOR_TEXT_1};
+    font-size: 10px;
+    height: 14px;
+}}
+QProgressBar::chunk {{
+    background-color: {COLOR_ACCENT};
+    border-radius: 3px;
+}}
+"""
+
+
+# ==========================================================================
+# 自定义环形风险仪表
+# ==========================================================================
+class RiskGauge(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._value = 0  # 0-100
+        self._risk = "safe"
+        self.setMinimumSize(180, 180)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def set_value(self, value: float, risk: str):
+        self._value = max(0, min(100, int(value * 100)))
+        self._risk = risk
+        self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        rect = self.rect()
+        side = min(rect.width(), rect.height()) - 24
+        x = (rect.width() - side) // 2
+        y = (rect.height() - side) // 2 + 8
+
+        # 背景圆环
+        pen_bg = QPen(QColor(COLOR_LINE))
+        pen_bg.setWidth(12)
+        pen_bg.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen_bg)
+        # Qt 角度单位 1/16 度
+        start_angle = 220 * 16
+        span_full = -260 * 16
+        p.drawArc(x, y, side, side, start_angle, span_full)
+
+        # 进度色环
+        color = COLOR_SAFE
+        if self._risk == "warn":
+            color = COLOR_WARN
+        elif self._risk == "critical":
+            color = COLOR_CRIT
+        pen_fg = QPen(QColor(color))
+        pen_fg.setWidth(12)
+        pen_fg.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen_fg)
+        span_done = int(span_full * (self._value / 100))
+        p.drawArc(x, y, side, side, start_angle, span_done)
+
+        # 中心数字
+        p.setPen(QColor(color))
+        f = QFont("SF Pro Display", 32, QFont.Weight.Light)
+        p.setFont(f)
+        p.drawText(rect, Qt.AlignmentFlag.AlignCenter, f"{self._value}")
+
+        # 风险文字
+        p.setPen(QColor(COLOR_TEXT_2))
+        f2 = QFont("SF Pro Display", 9)
+        f2.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 130)
+        p.setFont(f2)
+        text_rect = rect.adjusted(0, side // 2 + 30, 0, 0)
+        p.drawText(text_rect, Qt.AlignmentFlag.AlignHCenter, self._risk.upper())
+
+
+# ==========================================================================
+# 视频采集 + 推理线程
+# ==========================================================================
 class VideoThread(QThread):
-    change_pixmap_signal = pyqtSignal(np.ndarray)
-    update_stats_signal = pyqtSignal(float, float, str, str)
-    log_signal = pyqtSignal(str)
+    new_frame = pyqtSignal(np.ndarray, dict)
+    log_msg = pyqtSignal(str)
 
-    def __init__(self, engine, source=0, use_clahe=False):
+    def __init__(self, engine: MonitoringEngine, source, use_clahe=False):
         super().__init__()
-        self._run_flag = True
+        self._running = True
+        self.engine = engine
         self.source = source
         self.use_clahe = use_clahe
-        self.engine = engine
+
+        self.alarm_distract = QSoundEffect()
+        self.alarm_distract.setSource(QUrl.fromLocalFile(ALARM_DISTRACT_SOUND))
+        self.alarm_distract.setVolume(1.0)
+        self.alarm_critical = QSoundEffect()
+        self.alarm_critical.setSource(QUrl.fromLocalFile(ALARM_FATIGUE_SOUND))
+        self.alarm_critical.setVolume(1.0)
+
+        self._last_beep = 0.0
+        self._last_tts = 0.0
+
         self.engine.reset()
-        self.last_beep_time = 0  # Cooldown for audio alarm
-
-        # Throttles
-        self.last_yolo_time = 0
-        self.last_yolo_behavior = "正常"
-        self.last_log_time = 0
-        self.last_tts_time = 0
-
-        # 从全局 config 加载跨平台音频文件位置
-        self.alarm_sound = QSoundEffect()
-        self.alarm_sound.setSource(QUrl.fromLocalFile(ALARM_DISTRACT_SOUND))
-        self.alarm_sound.setVolume(1.0)
-
-        self.critical_alarm_sound = QSoundEffect()
-        self.critical_alarm_sound.setSource(QUrl.fromLocalFile(ALARM_FATIGUE_SOUND))
-        self.critical_alarm_sound.setVolume(1.0)
-
-        # 独立的帧队列分离视频采集和模型推理
-        self.frame_queue = queue.Queue(maxsize=1)
-        self.capture_thread = threading.Thread(target=self._capture_loop)
-        self.capture_thread.daemon = True
-
-    def _capture_loop(self):
-        cap = cv2.VideoCapture(self.source)
-        # 尝试设置适当的缓冲大小以减少延迟
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-        self.log_signal.emit(f"Opened video source: {self.source}")
-
-        # 获取视频原生帧率以控制播放速度 (如果是一段视频文件)
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        if fps <= 0 or fps > 100:
-            fps = 30  # 默认30帧
-        frame_delay = 1.0 / fps
-
-        is_video_file = isinstance(self.source, str) and not self.source.isdigit()
-
-        while self._run_flag:
-            start_time = time.time()
-            ret, frame = cap.read()
-            if not ret:
-                self.log_signal.emit("End of video stream.")
-                break
-
-            # 如果队列满了，丢弃最旧的帧以保证低延迟(实时性)
-            if self.frame_queue.full():
-                try:
-                    self.frame_queue.get_nowait()
-                except queue.Empty:
-                    pass
-            self.frame_queue.put(frame)
-
-            # 对于视频文件，硬性限制读取速度，防止视频1秒钟像快进一样闪播完
-            if is_video_file:
-                elapsed = time.time() - start_time
-                if elapsed < frame_delay:
-                    time.sleep(frame_delay - elapsed)
-
-        cap.release()
-        # 通知推理循环结束
-        try:
-            self.frame_queue.put(None)
-        except Exception:
-            pass
 
     def run(self):
-        # 启动视频采集子线程
-        self.capture_thread.start()
+        cap = cv2.VideoCapture(self.source)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
-        while self._run_flag:
+        if not cap.isOpened():
+            self.log_msg.emit(f"[error] 无法打开视频源 {self.source}")
+            return
+
+        self.log_msg.emit(f"[info] 已打开视频源 {self.source}")
+
+        is_video_file = isinstance(self.source, str) and not str(self.source).isdigit()
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if not (0 < fps < 100):
+            fps = 30
+        delay = 1.0 / fps
+
+        while self._running:
+            t0 = time.time()
+            ret, frame = cap.read()
+            if not ret:
+                self.log_msg.emit("[info] 视频流结束")
+                break
+
+            if (str(self.source).isdigit() or self.source == 0) and MIRROR_CAMERA_FRAME:
+                frame = cv2.flip(frame, 1)
+
             try:
-                # 使用带有 timeout 的 get 以便能够响应 _run_flag 的关闭信号
-                cv_img = self.frame_queue.get(timeout=0.1)
-
-                # 收到 None 表示视频流结束
-                if cv_img is None:
-                    break
-
-                # 对摄像头图像进行镜像反转，满足 Mac 用户习惯并与之前的录制数据几何对齐
-                if str(self.source).isdigit() or self.source == 0:
-                    cv_img = cv2.flip(cv_img, 1)
-
-                # 核心升级：一键调用 AI 引擎，屏蔽底层所有算法的脏活累活
-                cv_img, results = self.engine.process_frame(cv_img, self.use_clahe)
-
-                behavior = results["behavior_state"]
-                fatigue_level = results["fatigue_state"]
-                ear, mar = results["ear"], results["mar"]
-                is_warning = results["is_warning"]
-                is_critical = results["is_critical"]
-
-                current_time = time.time()
-
-                if is_warning:
-
-                    if is_critical:
-                        # 极度危险：取消 3 秒冷却，改为 0.5 秒夺命连环 Call，并播放刺耳音效
-                        if current_time - self.last_beep_time > 0.5:
-                            self.last_beep_time = current_time
-                            self.critical_alarm_sound.play()
-
-                        # 极度疲劳专属语音
-                        if current_time - self.last_tts_time > 10.0:
-                            self.last_tts_time = current_time
-                            subprocess.Popen(
-                                [
-                                    "say",
-                                    "-r",
-                                    "180",
-                                    "警告！警告！检测到极度疲劳，请立即停车休息！",
-                                ]
-                            )
-
-                    else:
-                        # 普通警告：保留 3 秒防打扰冷却期
-                        if current_time - self.last_beep_time > 3.0:
-                            self.last_beep_time = current_time
-                            self.alarm_sound.play()
-
-                        # 普通TTS语音（针对不同行为进行个性化播报）
-                        if current_time - self.last_tts_time > 15.0:
-                            self.last_tts_time = current_time
-                            if "正常" not in behavior:
-                                subprocess.Popen(
-                                    [
-                                        "say",
-                                        f"请注意，检测到{behavior}的危险行为，请专心驾驶。",
-                                    ]
-                                )
-                            elif "正常" not in fatigue_level:
-                                subprocess.Popen(
-                                    [
-                                        "say",
-                                        f"请注意，检测到{fatigue_level}状态，请提高警惕。",
-                                    ]
-                                )
-
-                # Signal Emit
-                self.change_pixmap_signal.emit(cv_img)
-                self.update_stats_signal.emit(ear, mar, fatigue_level, behavior)
-
-                if is_warning:
-                    # 日志防刷屏冷却 (每2秒最多弹出一条同样的日志)
-                    if current_time - self.last_log_time > 2.0:
-                        self.last_log_time = current_time
-                        self.log_signal.emit(
-                            f"⚠️ 警报触发 | 行为: {behavior} | 疲劳: {fatigue_level}"
-                        )
-
-            except queue.Empty:
-                # 队列为空则继续循环等待
-                continue
+                out_frame, results = self.engine.process_frame(frame, self.use_clahe)
             except Exception as e:
-                import traceback
+                self.log_msg.emit(f"[warn] 推理异常: {e}")
+                continue
 
-                error_details = traceback.format_exc()
-                print(f"--- Inference Loop Exception ---\n{error_details}")
-                self.log_signal.emit(
-                    f"❌ 运行异常已拦截: {e}\n(系统不会崩溃，丢弃损坏帧并尝试继续)"
-                )
+            self.new_frame.emit(out_frame, results)
+
+            # 报警声音
+            now = time.time()
+            if results.get("is_critical"):
+                if now - self._last_beep > 0.5:
+                    self._last_beep = now
+                    self.alarm_critical.play()
+                if now - self._last_tts > 10:
+                    self._last_tts = now
+                    try:
+                        subprocess.Popen(["say", "-r", "180", "警告，检测到极度疲劳，请立即停车休息"])
+                    except Exception:
+                        pass
+            elif results.get("is_warning"):
+                if now - self._last_beep > 3:
+                    self._last_beep = now
+                    self.alarm_distract.play()
+
+            # 视频文件需限速
+            if is_video_file:
+                used = time.time() - t0
+                if used < delay:
+                    time.sleep(delay - used)
+
+        cap.release()
 
     def stop(self):
-        self._run_flag = False
-        if self.capture_thread.is_alive():
-            self.capture_thread.join(timeout=1.0)
-        self.wait()
+        self._running = False
+        self.wait(2000)
 
 
+# ==========================================================================
+# 主窗口
+# ==========================================================================
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("驾驶员监控系统 (Driver Monitoring System)")
-        self.resize(1024, 768)
+        self.setWindowTitle("DMS · Driver Monitoring System")
+        self.resize(1440, 900)
+        self.setStyleSheet(GLOBAL_QSS)
+
+        # 8 类标签（与 BehaviorDetector 输出对齐）
+        self.class_labels = [
+            "Normal_Driving",
+            "Texting",
+            "Talking_on_Phone",
+            "Operating_Radio",
+            "Drinking",
+            "Reaching_Behind",
+            "Hair_and_Makeup",
+            "Talking_to_Passenger",
+        ]
+
+        print("[ui] 正在加载 AI 引擎...")
+        self.engine = MonitoringEngine(enable_pose=False)
+        print("[ui] 引擎就绪")
+
         self.thread = None
 
-        # 🟢 在全局启动时单例加载引擎并常驻内存（彻底消灭卡顿）
-        print("正在全局初始化 AI 核心引擎，请稍候...")
-        self.global_engine = MonitoringEngine()
-        print("引擎及其背后相关模型加载完毕！")
+        # 趋势数据
+        self.ear_buf = collections.deque(maxlen=200)
+        self.mar_buf = collections.deque(maxlen=200)
 
-        self._init_ui()
+        # FPS 统计
+        self._frame_times = collections.deque(maxlen=30)
 
-    def _init_ui(self):
-        # Configure global styling for Dark Theme
-        self.setStyleSheet(
-            """
-            QMainWindow {
-                background-color: #1a1a1a;
-            }
-            QLabel {
-                color: #e0e0e0;
-                font-family: 'Segoe UI', 'SF Pro', 'Helvetica Neue', Arial, sans-serif;
-            }
-            QGroupBox {
-                border: 1px solid #444444;
-                border-radius: 2px;
-                margin-top: 1.5ex;
-                background-color: #242424;
-                color: #ffffff;
-                font-size: 13px;
-                font-weight: bold;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 0 5px;
-            }
-            QPushButton {
-                background-color: #0078d7;
-                color: #ffffff;
-                border-radius: 2px;
-                padding: 8px;
-                font-weight: bold;
-                font-size: 13px;
-                border: 1px solid #005a9e;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-            QPushButton:pressed {
-                background-color: #005a9e;
-            }
-            QComboBox {
-                background-color: #333333;
-                color: #ffffff;
-                border: 1px solid #555555;
-                border-radius: 2px;
-                padding: 4px;
-            }
-            QTextEdit {
-                background-color: #000000;
-                color: #00ff00;
-                border: 1px solid #444444;
-                border-radius: 2px;
-                padding: 5px;
-                font-family: Consolas, monospace;
-            }
-        """
+        self._build_ui()
+
+        # 时钟定时器
+        self.clock_timer = QTimer(self)
+        self.clock_timer.timeout.connect(self._tick_clock)
+        self.clock_timer.start(500)
+        self._tick_clock()
+
+    # ----------------------------------------------------------------------
+    # UI 构造
+    # ----------------------------------------------------------------------
+    def _build_ui(self):
+        central = QWidget()
+        root = QVBoxLayout(central)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(10)
+
+        # 顶部 KPI 栏
+        root.addWidget(self._build_top_bar())
+
+        # 主体（3 列）
+        body = QHBoxLayout()
+        body.setSpacing(10)
+        body.addWidget(self._build_video_panel(), stretch=6)
+        body.addLayout(self._build_right_column(), stretch=4)
+        root.addLayout(body, stretch=1)
+
+        # 底部日志/控制
+        root.addWidget(self._build_bottom_bar())
+
+        self.setCentralWidget(central)
+
+    def _make_card(self):
+        card = QFrame()
+        card.setObjectName("card")
+        return card
+
+    def _build_top_bar(self):
+        bar = self._make_card()
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(20, 12, 20, 12)
+
+        brand = QLabel("DMS")
+        brand.setObjectName("brand")
+        sub = QLabel("DRIVER MONITORING SYSTEM")
+        sub.setStyleSheet(f"color: {COLOR_TEXT_3}; font-size: 10px; letter-spacing: 3px; padding-left: 10px;")
+        layout.addWidget(brand)
+        layout.addWidget(sub)
+        layout.addStretch()
+
+        # KPI 块
+        for title, attr in [
+            ("FPS", "lbl_fps"),
+            ("YOLO 置信度", "lbl_yolo_conf"),
+            ("融合置信度", "lbl_fused_conf"),
+            ("系统时间", "lbl_clock"),
+        ]:
+            block = QVBoxLayout()
+            t = QLabel(title)
+            t.setObjectName("cardTitle")
+            t.setAlignment(Qt.AlignmentFlag.AlignRight)
+            v = QLabel("--")
+            v.setObjectName("cardValueAccent" if attr in ("lbl_fps", "lbl_fused_conf") else "cardValue")
+            v.setAlignment(Qt.AlignmentFlag.AlignRight)
+            setattr(self, attr, v)
+            block.addWidget(t)
+            block.addWidget(v)
+            wrap = QWidget()
+            wrap.setLayout(block)
+            wrap.setMinimumWidth(110)
+            layout.addWidget(wrap)
+
+        return bar
+
+    def _build_video_panel(self):
+        card = self._make_card()
+        v = QVBoxLayout(card)
+        v.setContentsMargins(14, 14, 14, 14)
+
+        title_row = QHBoxLayout()
+        t = QLabel("实时视频源 · LIVE")
+        t.setObjectName("cardTitle")
+        title_row.addWidget(t)
+        title_row.addStretch()
+
+        self.cmb_source = QComboBox()
+        self.cmb_source.addItems(
+            ["摄像头 ID 0", "摄像头 ID 1", "摄像头 ID 2", "选择本地视频…"]
         )
+        title_row.addWidget(self.cmb_source)
 
-        central_widget = QWidget()
-        main_layout = QHBoxLayout()
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(20)
+        self.btn_start = QPushButton("▶ 开始")
+        self.btn_start.setObjectName("primary")
+        self.btn_start.clicked.connect(self.start_detection)
+        self.btn_stop = QPushButton("■ 停止")
+        self.btn_stop.setObjectName("danger")
+        self.btn_stop.clicked.connect(self.stop_detection)
+        title_row.addWidget(self.btn_start)
+        title_row.addWidget(self.btn_stop)
+        v.addLayout(title_row)
 
-        # Left Panel: Video Feed Group
-        video_group = QGroupBox("实时监控视频源")
-        video_layout = QVBoxLayout()
-        self.image_label = QLabel(self)
-        self.image_label.setMinimumSize(640, 480)
-        self.image_label.setStyleSheet(
-            "background-color: #0d0d0d; border: 1px solid #333333; border-radius: 2px;"
+        # 视频画面
+        self.video_label = QLabel("等待视频输入…")
+        self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.video_label.setStyleSheet(
+            f"background: #000; border: 1px solid {COLOR_LINE}; border-radius: 8px; color: {COLOR_TEXT_3};"
         )
-        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setText("正在等待视频输入...")
-        self.image_label.setFont(QFont("Arial", 16))
-        video_layout.addWidget(self.image_label)
-        video_group.setLayout(video_layout)
-        main_layout.addWidget(video_group, stretch=5)
+        self.video_label.setMinimumSize(640, 480)
+        self.video_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        v.addWidget(self.video_label, stretch=1)
 
-        # Right Panel: Controls and Stats
-        right_panel = QVBoxLayout()
-        right_panel.setSpacing(15)
+        # 视频下方状态
+        status = QHBoxLayout()
+        # EAR
+        ear_box = self._labeled_value("EAR · 眼部张合度", "0.00", "lbl_ear", accent=True)
+        # MAR
+        mar_box = self._labeled_value("MAR · 嘴部张合度", "0.00", "lbl_mar", accent=True)
+        # behavior
+        beh_box = self._labeled_value("行为识别", "—", "lbl_behavior")
+        # fatigue
+        fat_box = self._labeled_value("疲劳判定", "—", "lbl_fatigue")
+        for w in (ear_box, mar_box, beh_box, fat_box):
+            status.addWidget(w, stretch=1)
+        v.addLayout(status)
 
-        # Control Group
-        control_group = QGroupBox("系统控制设置")
-        control_layout = QVBoxLayout()
-        control_layout.setSpacing(10)
+        return card
 
-        self.source_combo = QComboBox()
-        self.source_combo.addItems(
-            [
-                "默认前置摄像头 (ID:0)",
-                "外接/手机接力摄像头 (ID:1)",
-                "外接/虚拟摄像头 (ID:2)",
-                "本地录像测试 (mp4/avi...)",
-                "RTSP 网络工控流",
-            ]
+    def _labeled_value(self, title, value, attr, accent=False):
+        wrap = QFrame()
+        wrap.setObjectName("card")
+        lay = QVBoxLayout(wrap)
+        lay.setContentsMargins(12, 10, 12, 10)
+        t = QLabel(title)
+        t.setObjectName("cardTitle")
+        v = QLabel(value)
+        v.setObjectName("cardValueAccent" if accent else "cardValue")
+        setattr(self, attr, v)
+        lay.addWidget(t)
+        lay.addWidget(v)
+        return wrap
+
+    def _build_right_column(self):
+        col = QVBoxLayout()
+        col.setSpacing(10)
+
+        # 风险仪表
+        risk_card = self._make_card()
+        risk_lay = QVBoxLayout(risk_card)
+        risk_lay.setContentsMargins(14, 14, 14, 14)
+        rt = QLabel("综合风险等级")
+        rt.setObjectName("cardTitle")
+        risk_lay.addWidget(rt)
+        self.risk_gauge = RiskGauge()
+        risk_lay.addWidget(self.risk_gauge, stretch=1)
+        self.lbl_fusion_notes = QLabel("等待数据…")
+        self.lbl_fusion_notes.setStyleSheet(
+            f"color: {COLOR_TEXT_3}; font-size: 11px;"
         )
-        control_layout.addWidget(QLabel("选择监测数据源:"))
-        control_layout.addWidget(self.source_combo)
+        self.lbl_fusion_notes.setWordWrap(True)
+        risk_lay.addWidget(self.lbl_fusion_notes)
+        col.addWidget(risk_card, stretch=2)
 
-        # CLAHE Checkbox
-        self.chk_clahe = QCheckBox("启用 CLAHE 直方图环境光自适应增强")
-        self.chk_clahe.setStyleSheet("color: #e0e0e0; font-weight: bold;")
+        # 8 类置信度
+        prob_card = self._make_card()
+        prob_lay = QVBoxLayout(prob_card)
+        prob_lay.setContentsMargins(14, 14, 14, 14)
+        pt = QLabel("8 类行为置信度")
+        pt.setObjectName("cardTitle")
+        prob_lay.addWidget(pt)
+
+        self.prob_bars = {}
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
+        for i, name in enumerate(self.class_labels):
+            label = QLabel(name)
+            label.setStyleSheet(f"color: {COLOR_TEXT_2}; font-size: 11px;")
+            bar = QProgressBar()
+            bar.setRange(0, 100)
+            bar.setValue(0)
+            bar.setFormat("%v%")
+            self.prob_bars[name] = bar
+            grid.addWidget(label, i, 0)
+            grid.addWidget(bar, i, 1)
+        prob_lay.addLayout(grid)
+        col.addWidget(prob_card, stretch=3)
+
+        # EAR/MAR 趋势图
+        trend_card = self._make_card()
+        trend_lay = QVBoxLayout(trend_card)
+        trend_lay.setContentsMargins(14, 14, 14, 14)
+        tt = QLabel("EAR / MAR 趋势")
+        tt.setObjectName("cardTitle")
+        trend_lay.addWidget(tt)
+
+        if HAS_PG:
+            pg.setConfigOptions(antialias=True)
+            self.trend_plot = pg.PlotWidget(background=COLOR_BG_1)
+            self.trend_plot.setMouseEnabled(x=False, y=False)
+            self.trend_plot.hideButtons()
+            self.trend_plot.showGrid(x=True, y=True, alpha=0.15)
+            axis_pen = pg.mkPen(color=COLOR_LINE, width=1)
+            self.trend_plot.getAxis("bottom").setPen(axis_pen)
+            self.trend_plot.getAxis("left").setPen(axis_pen)
+            self.trend_plot.getAxis("bottom").setTextPen(QColor(COLOR_TEXT_3))
+            self.trend_plot.getAxis("left").setTextPen(QColor(COLOR_TEXT_3))
+            self.trend_plot.addLegend(offset=(-10, 10))
+            self.curve_ear = self.trend_plot.plot(
+                pen=pg.mkPen(COLOR_ACCENT, width=2), name="EAR"
+            )
+            self.curve_mar = self.trend_plot.plot(
+                pen=pg.mkPen(COLOR_WARN, width=2), name="MAR"
+            )
+            trend_lay.addWidget(self.trend_plot)
+        else:
+            placeholder = QLabel("缺少 pyqtgraph，请 pip install pyqtgraph")
+            placeholder.setStyleSheet(f"color: {COLOR_TEXT_3}; padding: 24px;")
+            trend_lay.addWidget(placeholder)
+        col.addWidget(trend_card, stretch=3)
+
+        return col
+
+    def _build_bottom_bar(self):
+        card = self._make_card()
+        lay = QHBoxLayout(card)
+        lay.setContentsMargins(14, 10, 14, 10)
+
+        # 参数控制
+        controls = QVBoxLayout()
+        controls.setSpacing(6)
+
+        self.chk_clahe = QCheckBox("启用 CLAHE 暗光增强")
         self.chk_clahe.setChecked(False)
         self.chk_clahe.toggled.connect(self.toggle_clahe)
-        control_layout.addWidget(self.chk_clahe)
+        controls.addWidget(self.chk_clahe)
 
-        btn_layout = QHBoxLayout()
-        self.btn_start = QPushButton("开始检测 ▶")
-        self.btn_start.clicked.connect(self.start_detection)
-        self.btn_stop = QPushButton("停止检测 ⏹")
-        self.btn_stop.setStyleSheet(
-            "background-color: #d13438; border: 1px solid #a80000; color: white;"
-        )
-        self.btn_stop.clicked.connect(self.stop_detection)
-        btn_layout.addWidget(self.btn_start)
-        btn_layout.addWidget(self.btn_stop)
-        control_layout.addLayout(btn_layout)
-        control_group.setLayout(control_layout)
-        right_panel.addWidget(control_group)
+        self.chk_pose = QCheckBox("启用 Pose 空间约束（二级判定）")
+        self.chk_pose.setChecked(False)
+        self.chk_pose.toggled.connect(self.toggle_pose)
+        controls.addWidget(self.chk_pose)
 
-        # Parameters Control Group
-        param_group = QGroupBox("算法参数控制面板")
-        param_layout = QVBoxLayout()
-        param_layout.setSpacing(8)
+        self.chk_tta = QCheckBox("启用 TTA（测试时增强：原图+翻转）")
+        self.chk_tta.setChecked(True)
+        self.chk_tta.toggled.connect(self.toggle_tta)
+        controls.addWidget(self.chk_tta)
 
-        # 1. auto tune fatigue
-        self.chk_auto_tune = QCheckBox("启用 EAR/MAR 动态自适应阈值回归")
-        self.chk_auto_tune.setStyleSheet("color: #e0e0e0; font-weight: bold;")
+        self.chk_auto_tune = QCheckBox("启用 EAR/MAR 自适应阈值")
         self.chk_auto_tune.setChecked(True)
         self.chk_auto_tune.toggled.connect(self.toggle_auto_tune)
-        param_layout.addWidget(self.chk_auto_tune)
+        controls.addWidget(self.chk_auto_tune)
 
-        # 2. Behavior Confidence Threshold
-        self.lbl_conf = QLabel("算法推理置信度 (Confidence): 0.45")
+        slider_row = QHBoxLayout()
+        self.lbl_conf = QLabel("行为置信度: 0.50")
+        self.lbl_conf.setStyleSheet(f"color: {COLOR_TEXT_2}; font-size: 11px;")
         self.slider_conf = QSlider(Qt.Orientation.Horizontal)
-        self.slider_conf.setRange(10, 90)
-        self.slider_conf.setValue(45)
+        self.slider_conf.setRange(20, 90)
+        self.slider_conf.setValue(50)
         self.slider_conf.valueChanged.connect(self.update_conf)
-        param_layout.addWidget(self.lbl_conf)
-        param_layout.addWidget(self.slider_conf)
+        slider_row.addWidget(self.lbl_conf)
+        slider_row.addWidget(self.slider_conf, stretch=1)
+        controls.addLayout(slider_row)
 
-        # 3. Behavior Smoothing
-        self.lbl_smooth = QLabel("特征信号防抖延迟 (Smooth): 45帧 (1.5秒)")
-        self.slider_smooth = QSlider(Qt.Orientation.Horizontal)
-        self.slider_smooth.setRange(5, 90)
-        self.slider_smooth.setValue(45)
-        self.slider_smooth.valueChanged.connect(self.update_smooth)
-        param_layout.addWidget(self.lbl_smooth)
-        param_layout.addWidget(self.slider_smooth)
+        lay.addLayout(controls, stretch=1)
 
-        param_group.setLayout(param_layout)
-        right_panel.addWidget(param_group)
+        # 日志
+        log_block = QVBoxLayout()
+        lt = QLabel("事件日志")
+        lt.setObjectName("cardTitle")
+        log_block.addWidget(lt)
+        self.log = QTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setMaximumHeight(140)
+        log_block.addWidget(self.log)
+        lay.addLayout(log_block, stretch=2)
 
-        # Stats Display Group (Premium Grid Layout Redesign)
-        stats_group = QGroupBox("驾驶状态追踪与分析视图")
-        stats_group.setStyleSheet("QGroupBox { font-size: 14px; font-weight: bold; }")
+        # 报告导出
+        export_block = QVBoxLayout()
+        export_block.addStretch()
+        self.btn_export = QPushButton("📊 导出会话报告")
+        self.btn_export.setObjectName("primary")
+        self.btn_export.clicked.connect(self.export_report)
+        export_block.addWidget(self.btn_export)
+        export_block.addStretch()
+        lay.addLayout(export_block)
 
-        from PyQt6.QtWidgets import QGridLayout
+        return card
 
-        stats_layout = QGridLayout()
-        stats_layout.setSpacing(10)
-
-        # Style template for premium cards
-        card_style_normal = """
-            background-color: #2b2b2b;
-            border-radius: 2px;
-            border: 1px solid #444444;
-            padding: 10px;
-            font-size: 13px;
-            color: #d0d0d0;
-        """
-
-        self.lbl_ear = QLabel("结构特征 EAR<br><br>--")
-        self.lbl_mar = QLabel("结构特征 MAR<br><br>--")
-        self.lbl_fatigue = QLabel("视觉疲劳指数<br><br>正常")
-        self.lbl_behavior = QLabel("驾驶行为预测<br><br>正常")
-
-        # Setup alignment and initial style
-        for lbl in [self.lbl_ear, self.lbl_mar, self.lbl_fatigue, self.lbl_behavior]:
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setStyleSheet(card_style_normal)
-            lbl.setMinimumHeight(100)  # Force a stable height so UI never deforms
-
-        # Add to Grid (2x2)
-        stats_layout.addWidget(self.lbl_ear, 0, 0)
-        stats_layout.addWidget(self.lbl_mar, 0, 1)
-        stats_layout.addWidget(self.lbl_fatigue, 1, 0)
-        stats_layout.addWidget(self.lbl_behavior, 1, 1)
-
-        stats_group.setLayout(stats_layout)
-        right_panel.addWidget(stats_group)
-
-        # Log Output Group
-        log_group = QGroupBox("后台事件日志采集")
-        log_layout = QVBoxLayout()
-        self.log_window = QTextEdit()
-        self.log_window.setReadOnly(True)
-        self.log_window.append("-> 系统初始化完成.")
-
-        self.btn_export = QPushButton("📊 导出本次全息驾车报告 (EXCEL/PDF记录器)")
-        self.btn_export.clicked.connect(self.export_session_report)
-        self.btn_export.setStyleSheet(
-            "background-color: #107c10; border: 1px solid #0b5a0b; color: white;"
-        )  # Industrial Green highlight
-
-        log_layout.addWidget(self.log_window)
-        log_layout.addWidget(self.btn_export)
-        log_group.setLayout(log_layout)
-
-        right_panel.addWidget(log_group, stretch=1)
-
-        main_layout.addLayout(right_panel, stretch=2)
-        central_widget.setLayout(main_layout)
-        self.setCentralWidget(central_widget)
+    # ----------------------------------------------------------------------
+    # 行为
+    # ----------------------------------------------------------------------
+    def _tick_clock(self):
+        self.lbl_clock.setText(datetime.now().strftime("%H:%M:%S"))
 
     def start_detection(self):
-        source_idx = self.source_combo.currentIndex()
-        source = 0
-
-        if source_idx == 0:
-            source = 0
-        elif source_idx == 1:
-            source = 1
-        elif source_idx == 2:
-            source = 2
-        elif source_idx == 3:
+        if self.thread is not None:
+            return
+        idx = self.cmb_source.currentIndex()
+        if idx == 3:
             file_name, _ = QFileDialog.getOpenFileName(
-                self,
-                "打开本地测试视频",
-                "",
-                "Video Files (*.mp4 *.avi *.mov *.jpg *.png)",
+                self, "选择视频", "", "Video Files (*.mp4 *.avi *.mov)"
             )
             if not file_name:
                 return
             source = file_name
-        elif source_idx == 4:
-            source = "rtsp://example_stream"
+        else:
+            source = idx
 
-        self.thread = VideoThread(
-            engine=self.global_engine,
-            source=source,
-            use_clahe=self.chk_clahe.isChecked(),
-        )
-        self.thread.change_pixmap_signal.connect(self.update_image)
-        self.thread.update_stats_signal.connect(self.update_stats)
-        self.thread.log_signal.connect(self.append_log)
+        self.thread = VideoThread(self.engine, source, use_clahe=self.chk_clahe.isChecked())
+        self.thread.new_frame.connect(self._on_new_frame)
+        self.thread.log_msg.connect(self._append_log)
         self.thread.start()
-
-    def export_session_report(self):
-        """调用全局 AI 引擎中的记录仪，一键生成报表到桌面"""
-        if not hasattr(self, "global_engine"):
-            return
-
-        import os, time, subprocess
-
-        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-        file_name = f"驾驶员会话监控报告_{int(time.time())}.txt"
-        save_path = os.path.join(desktop, file_name)
-
-        # 引擎内嵌的记录仪提供计算与组装逻辑
-        self.global_engine.logger.export_report(save_path)
-
-        self.append_log(f"✅ 完美！系统已出具临床级体检报告！\n📁 存放于: {save_path}")
-
-        # 专为 MacOS 打造的物理召唤神迹：写完直接弹窗打开
-        subprocess.Popen(["open", save_path])
-
-    def toggle_clahe(self, checked):
-        if self.thread:
-            self.thread.use_clahe = checked
-            state_msg = "开启" if checked else "关闭"
-            self.log_window.append(f"-> 🌙 已{state_msg}环境自适应夜视模式")
+        self._append_log("▶ 监测已启动")
 
     def stop_detection(self):
-        if self.thread:
-            self.thread.stop()
-            self.thread = None
-            self.image_label.clear()
-            self.image_label.setText("监控已停止。")
-            self.image_label.setStyleSheet(
-                "background-color: #0d0d0d; border: 1px solid #333333; border-radius: 2px;"
-            )
-
-    def update_image(self, cv_img):
-        # 拦截残留信号：如果你已经点击了停止（self.thread变成了None），就扔掉残影
         if self.thread is None:
             return
-        qt_img = self.convert_cv_qt(cv_img)
-        self.image_label.setPixmap(qt_img)
+        self.thread.stop()
+        self.thread = None
+        self.video_label.setText("监测已停止")
+        self._append_log("■ 监测已停止")
+
+    def toggle_clahe(self, checked):
+        if self.thread is not None:
+            self.thread.use_clahe = checked
+        self._append_log(f"CLAHE {'开启' if checked else '关闭'}")
+
+    def toggle_pose(self, checked):
+        self.engine.enable_pose = checked
+        if checked and self.engine.pose_validator is None:
+            self.engine._init_pose()
+        self._append_log(f"Pose 二级判定 {'开启' if checked else '关闭'}")
+
+    def toggle_tta(self, checked):
+        self.engine.behavior_detector.use_tta = checked
+        self._append_log(f"TTA 测试时增强 {'开启' if checked else '关闭'}")
 
     def toggle_auto_tune(self, checked):
-        self.global_fatigue_detector.auto_tune_thresholds = checked
-        if checked:
-            self.append_log("系统已开启自适应疲劳计算 (千人千面动态阈值生效中)")
-        else:
-            self.append_log("已固定疲劳阈值 (手动安全底线 EAR:0.25, MAR:0.50)")
-            # Reset
-            self.global_fatigue_detector.dynamic_ear_threshold = 0.25
-            self.global_fatigue_detector.dynamic_mar_threshold = 0.50
+        fd = self.engine.fatigue_detector
+        fd.auto_tune_thresholds = checked
+        if not checked:
+            fd.dynamic_ear_threshold = 0.25
+            fd.dynamic_mar_threshold = 0.50
+        self._append_log(f"动态阈值 {'开启' if checked else '关闭'}")
 
     def update_conf(self, val):
-        conf = val / 100.0
-        self.global_behavior_detector.confidence_threshold = conf
-        self.lbl_conf.setText(f"行为判定置信度/灵敏度: {conf:.2f}")
+        c = val / 100.0
+        self.engine.behavior_detector.confidence_threshold = c
+        self.lbl_conf.setText(f"行为置信度: {c:.2f}")
 
-    def update_smooth(self, val):
-        self.global_behavior_detector.smoothing_window = val
-        if len(self.global_behavior_detector.behavior_history) > val:
-            self.global_behavior_detector.behavior_history = (
-                self.global_behavior_detector.behavior_history[-val:]
-            )
-        sec = val / 30.0
-        self.lbl_smooth.setText(f"信号防抖过滤延迟: {val}帧 ({sec:.1f}秒)")
+    def export_report(self):
+        import os
 
-    def update_stats(self, ear, mar, fatigue, behavior):
-        # 拦截残留信号
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        path = os.path.join(desktop, f"DMS_Session_{int(time.time())}.txt")
+        self.engine.logger.export_report(path)
+        self._append_log(f"已导出报告 → {path}")
+        try:
+            subprocess.Popen(["open", path])
+        except Exception:
+            pass
+
+    def _append_log(self, text):
+        ts = datetime.now().strftime("%H:%M:%S")
+        self.log.append(f"[{ts}] {text}")
+
+    # ----------------------------------------------------------------------
+    # 帧回调
+    # ----------------------------------------------------------------------
+    def _on_new_frame(self, cv_img, results):
         if self.thread is None:
             return
 
-        # Premium Card Text Update
-        self.lbl_ear.setText(
-            f"结构特征 EAR<br><br><span style='font-size: 26px; color: #ffffff;'>{ear:.2f}</span>"
-        )
-        self.lbl_mar.setText(
-            f"结构特征 MAR<br><br><span style='font-size: 26px; color: #ffffff;'>{mar:.2f}</span>"
-        )
+        # FPS 统计
+        now = time.time()
+        self._frame_times.append(now)
+        if len(self._frame_times) >= 2:
+            dt = self._frame_times[-1] - self._frame_times[0]
+            fps = (len(self._frame_times) - 1) / dt if dt > 0 else 0
+            self.lbl_fps.setText(f"{fps:.0f}")
 
-        # Color palettes for dynamic states (Industrial)
-        COLOR_SAFE = "#107c10"  # Microsoft/Industrial Green
-        COLOR_WARN = "#ffb900"  # Amber/Yellow
-        COLOR_CRIT = "#d13438"  # Danger Red
+        # 视频图像
+        rgb = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb.shape
+        qimg = QImage(rgb.data, w, h, ch * w, QImage.Format.Format_RGB888)
+        pix = QPixmap.fromImage(qimg).scaled(
+            self.video_label.width(),
+            self.video_label.height(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self.video_label.setPixmap(pix)
 
-        # Determine Fatigue Style
-        if "正常" in fatigue:
-            f_color = COLOR_SAFE
-            b_color = "#444444"
-            bg_color = "#2b2b2b"
-        elif "极度" in fatigue:
-            f_color = "#ffffff"
-            b_color = COLOR_CRIT
-            bg_color = COLOR_CRIT
+        # 数值
+        ear = float(results.get("ear", 0.0))
+        mar = float(results.get("mar", 0.0))
+        self.lbl_ear.setText(f"{ear:.2f}")
+        self.lbl_mar.setText(f"{mar:.2f}")
+        self.lbl_behavior.setText(str(results.get("behavior_state", "—")))
+        self.lbl_fatigue.setText(str(results.get("fatigue_state", "—")))
+        self.lbl_yolo_conf.setText(f"{float(results.get('yolo_raw_confidence', 0.0)):.2f}")
+        self.lbl_fused_conf.setText(f"{float(results.get('fused_confidence', 0.0)):.2f}")
+
+        # 风险仪表
+        risk = results.get("risk_level", "safe")
+        self.risk_gauge.set_value(float(results.get("fused_confidence", 0.0)), risk)
+
+        # 染色行为/疲劳/EAR/MAR
+        if "正常" in results.get("behavior_state", ""):
+            self.lbl_behavior.setStyleSheet(f"color: {COLOR_SAFE}; font-size: 22px;")
         else:
-            f_color = COLOR_WARN
-            b_color = COLOR_WARN
-            bg_color = "#2b2b2b"
+            self.lbl_behavior.setStyleSheet(f"color: {COLOR_CRIT}; font-size: 22px; font-weight: 600;")
 
-        self.lbl_fatigue.setText(
-            f"视觉疲劳指数<br><br><span style='font-size: 24px; color: {f_color}; font-weight: 900;'>{fatigue}</span>"
-        )
-        self.lbl_fatigue.setStyleSheet(
-            f"background-color: {bg_color}; border-radius: 2px; border: 1px solid {b_color}; padding: 10px; font-size: 13px;"
-        )
-
-        # Determine Behavior Style
-        if "正常" in behavior:
-            b_text_col = COLOR_SAFE
-            b_border_col = "#444444"
-            b_bg_col = "#2b2b2b"
+        if "正常" in results.get("fatigue_state", ""):
+            self.lbl_fatigue.setStyleSheet(f"color: {COLOR_SAFE}; font-size: 22px;")
+        elif "极度" in results.get("fatigue_state", ""):
+            self.lbl_fatigue.setStyleSheet(f"color: {COLOR_CRIT}; font-size: 22px; font-weight: 600;")
         else:
-            b_text_col = "#ffffff"
-            b_border_col = COLOR_CRIT
-            b_bg_col = COLOR_CRIT
+            self.lbl_fatigue.setStyleSheet(f"color: {COLOR_WARN}; font-size: 22px;")
 
-        self.lbl_behavior.setText(
-            f"驾驶行为预测<br><br><span style='font-size: 24px; color: {b_text_col}; font-weight: 900;'>{behavior}</span>"
-        )
-        self.lbl_behavior.setStyleSheet(
-            f"background-color: {b_bg_col}; border-radius: 2px; border: 1px solid {b_border_col}; padding: 10px; font-size: 13px;"
-        )
+        # 融合 notes
+        notes = results.get("fusion_notes") or []
+        if notes:
+            self.lbl_fusion_notes.setText("· " + "\n· ".join(notes))
+        else:
+            self.lbl_fusion_notes.setText("单模态判定")
 
-    def convert_cv_qt(self, cv_img):
-        rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
-        h, w, ch = rgb_image.shape
-        bytes_per_line = ch * w
-        convert_to_Qt_format = QImage(
-            rgb_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888
-        )
-        p = convert_to_Qt_format.scaled(640, 480, Qt.AspectRatioMode.KeepAspectRatio)
-        return QPixmap.fromImage(p)
+        # 8 类概率
+        probs = results.get("class_probs")
+        names = results.get("class_names")
+        if probs and names:
+            for i, name in enumerate(names):
+                bar = self.prob_bars.get(name)
+                if bar:
+                    bar.setValue(int(probs[i] * 100))
 
-    def append_log(self, text):
-        self.log_window.append(text)
+        # 趋势
+        if HAS_PG:
+            self.ear_buf.append(ear)
+            self.mar_buf.append(mar)
+            xs = list(range(len(self.ear_buf)))
+            self.curve_ear.setData(xs, list(self.ear_buf))
+            self.curve_mar.setData(xs, list(self.mar_buf))
 
+        # 重要事件入日志
+        if results.get("is_warning"):
+            self._append_log(
+                f"{'[CRIT]' if results.get('is_critical') else '[WARN]'} "
+                f"行为={results.get('behavior_state')} | 疲劳={results.get('fatigue_state')}"
+            )
+
+    # ----------------------------------------------------------------------
     def closeEvent(self, event):
         self.stop_detection()
         event.accept()
+
+
+def main():
+    import sys
+
+    app = QApplication(sys.argv)
+    win = MainWindow()
+    win.show()
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
