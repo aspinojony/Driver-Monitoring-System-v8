@@ -14,9 +14,6 @@ _面向毕业答辩与原型演示的车载驾驶员状态监控系统：行为�
 
 </div>
 
-<p align="center">
-  <img src="assets/showcase/overview.svg" alt="Project Overview" width="100%" />
-</p>
 
 
 ---
