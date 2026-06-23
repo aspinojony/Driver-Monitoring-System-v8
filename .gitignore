@@ -15,6 +15,8 @@ __pycache__/
 # IDE / Editor
 .idea/
 .vscode/
+.golutra/
+.agents/
 
 # Datasets and heavy data
 data/
@@ -25,6 +27,18 @@ runs/
 *.pt
 *.onnx
 *.weights
+
+# Generated reports and local thesis/private docs
+reports/
+file/
+文档资料/
+*.doc
+*.docx
+*.pdf
+*.txt
+毕业论文.*
+内蒙古科技大学*
+计科-*.docx
 
 # temp office/iCloud lock files
 .~*
