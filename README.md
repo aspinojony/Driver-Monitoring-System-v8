@@ -35,6 +35,14 @@ main.py     桌面端启动入口
 
 ---
 
+## 运行截图
+
+> 本地使用项目真实 `templates/index.html` 渲染 Dashboard 界面截图。完整 AI 引擎在当前机器启动时遇到 `mediapipe.solutions` API 兼容问题，因此这里标注为界面预览截图，不冒充完整推理运行结果。
+
+<p align="center">
+  <img src="docs/images/dashboard-preview.png" alt="DMS Dashboard 界面预览" width="100%" />
+</p>
+
 ## 1 系统亮点
 
 | 创新点 | 实现 | 论文卖点 |
