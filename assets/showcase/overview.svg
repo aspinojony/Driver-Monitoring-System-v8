@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f8fafc"/><stop offset="1" stop-color="#e2e8f0"/></linearGradient></defs>
+  <rect width="1200" height="630" rx="0" fill="url(#bg)"/>
+  <circle cx="1080" cy="90" r="180" fill="#dc2626" opacity="0.12"/>
+  <circle cx="90" cy="580" r="150" fill="#dc2626" opacity="0.10"/>
+  <text x="70" y="90" fill="#111827" font-family="Arial, PingFang SC, sans-serif" font-size="46" font-weight="800">Driver Monitoring System</text>
+  <text x="72" y="130" fill="#dc2626" font-family="Arial, PingFang SC, sans-serif" font-size="24" font-weight="700">Python · OpenCV · YOLOv8 · MediaPipe</text>
+  <rect x="320" y="145" width="560" height="265" rx="18" fill="#0f172a"/><circle cx="475" cy="250" r="62" fill="none" stroke="#dc2626" stroke-width="5"/><rect x="590" y="190" width="190" height="42" rx="10" fill="#dc2626"/><rect x="590" y="252" width="230" height="28" rx="8" fill="#334155"/><rect x="590" y="298" width="170" height="28" rx="8" fill="#334155"/><text x="424" y="345" fill="#e5e7eb" font-size="18">CAMERA STREAM</text>
+  <rect x="70" y="440" width="180" height="70" rx="14" fill="#ffffff" opacity="0.94"/><text x="90" y="470" fill="#111827" font-size="18" font-weight="700">Behavior</text><text x="90" y="494" fill="#4b5563" font-size="13">classification</text><rect x="275" y="440" width="180" height="70" rx="14" fill="#ffffff" opacity="0.94"/><text x="295" y="470" fill="#111827" font-size="18" font-weight="700">Fatigue</text><text x="295" y="494" fill="#4b5563" font-size="13">detection</text><rect x="480" y="440" width="180" height="70" rx="14" fill="#ffffff" opacity="0.94"/><text x="500" y="470" fill="#111827" font-size="18" font-weight="700">Pose</text><text x="500" y="494" fill="#4b5563" font-size="13">constraint validatio</text><rect x="685" y="440" width="180" height="70" rx="14" fill="#ffffff" opacity="0.94"/><text x="705" y="470" fill="#111827" font-size="18" font-weight="700">Web</text><text x="705" y="494" fill="#4b5563" font-size="13">dashboard / PyQt UI</text>
+  <text x="70" y="585" fill="#64748b" font-family="Arial, PingFang SC, sans-serif" font-size="18">github.com/aspinojony · project showcase</text>
+</svg>
